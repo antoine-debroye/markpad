@@ -112,7 +112,9 @@ private struct LayoutBuilder {
 
         case let codeBlock as CodeBlock:
             addBlock(codeBlock, kind: .codeBlock(language: codeBlock.language))
-            addMarkers(fenceRanges(of: codeBlock))
+            let fences = fenceRanges(of: codeBlock)
+            addMarkers(fences)
+            highlightCode(codeBlock, fences: fences)
 
         case is ThematicBreak:
             addBlock(markup, kind: .thematicBreak)
@@ -211,6 +213,26 @@ private struct LayoutBuilder {
         let lastLine = index.lineRange(containing: end)
         if lastLine.location != firstLine.location, isFence(lastLine) { ranges.append(lastLine) }
         return ranges
+    }
+
+    /// Colours the body of a fenced block, excluding the fence lines themselves.
+    private mutating func highlightCode(_ codeBlock: CodeBlock, fences: [NSRange]) {
+        guard SyntaxHighlighter.supports(language: codeBlock.language),
+              let full = range(of: codeBlock) else { return }
+
+        // The body starts after the opening fence and ends before the closing one.
+        var start = full.location
+        var end = NSMaxRange(full)
+        if let opening = fences.first(where: { $0.location == full.location }) {
+            start = min(NSMaxRange(opening) + 1, end)
+        }
+        if let closing = fences.last, closing.location > start, NSMaxRange(closing) >= end - 1 {
+            end = max(closing.location, start)
+        }
+        guard end > start, end <= source.length else { return }
+
+        let body = source.substring(with: NSRange(location: start, length: end - start))
+        layout.code += SyntaxHighlighter.spans(in: body, language: codeBlock.language, offset: start)
     }
 
     private func isFence(_ range: NSRange) -> Bool {

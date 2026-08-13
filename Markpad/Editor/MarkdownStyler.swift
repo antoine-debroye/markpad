@@ -69,6 +69,11 @@ struct MarkdownStyler {
         for inline in layout.inlines {
             applyInline(inline, to: storage)
         }
+        for span in layout.code {
+            let range = clamp(span.range, in: storage)
+            guard range.length > 0 else { continue }
+            storage.addAttribute(.foregroundColor, value: theme.color(for: span.token), range: range)
+        }
         for marker in layout.markers {
             let isActive = activeRanges.contains { NSIntersectionRange($0, marker.range).length > 0 }
             applyMarker(marker, to: storage, isActive: isActive)

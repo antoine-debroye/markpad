@@ -9,19 +9,23 @@ public struct MarkdownLayout: Sendable, Equatable {
     public var markers: [Marker]
     public var tables: [TableStructure]
     public var images: [ImagePlacement]
+    /// Coloured spans inside fenced code blocks.
+    public var code: [SyntaxHighlighter.Span]
 
     public init(
         blocks: [BlockRun] = [],
         inlines: [InlineRun] = [],
         markers: [Marker] = [],
         tables: [TableStructure] = [],
-        images: [ImagePlacement] = []
+        images: [ImagePlacement] = [],
+        code: [SyntaxHighlighter.Span] = []
     ) {
         self.blocks = blocks
         self.inlines = inlines
         self.markers = markers
         self.tables = tables
         self.images = images
+        self.code = code
     }
 
     /// True when the caret sits inside `range`, meaning its raw source should be shown.

@@ -107,6 +107,11 @@ public enum CSSGenerator {
           text-align: left;
         }
         thead th { background: var(--mp-table-header-background); font-weight: 620; }
+        .tok-keyword { color: var(--mp-code-keyword); }
+        .tok-string { color: var(--mp-code-string); }
+        .tok-comment { color: var(--mp-code-comment); font-style: italic; }
+        .tok-number { color: var(--mp-code-number); }
+        .tok-type { color: var(--mp-code-type); }
         """
     }
 
@@ -123,7 +128,12 @@ public enum CSSGenerator {
             ("--mp-quote-text", palette.quoteText),
             ("--mp-rule", palette.rule),
             ("--mp-table-border", palette.tableBorder),
-            ("--mp-table-header-background", palette.tableHeaderBackground)
+            ("--mp-table-header-background", palette.tableHeaderBackground),
+            ("--mp-code-keyword", palette.codeKeyword),
+            ("--mp-code-string", palette.codeString),
+            ("--mp-code-comment", palette.codeComment),
+            ("--mp-code-number", palette.codeNumber),
+            ("--mp-code-type", palette.codeType)
         ]
         return entries.map { "  \($0.0): \($0.1);" }.joined(separator: "\n")
     }

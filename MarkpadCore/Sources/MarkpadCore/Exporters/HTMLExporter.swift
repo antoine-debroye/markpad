@@ -181,7 +181,36 @@ struct HTMLRenderer: MarkupVisitor {
         let language = codeBlock.language.map { " class=\"language-\(Self.escapeAttribute($0))\"" } ?? ""
         var code = codeBlock.code
         if code.hasSuffix("\n") { code.removeLast() }
-        return "<pre><code\(language)>\(Self.escape(code))</code></pre>\n"
+        return "<pre><code\(language)>\(Self.highlight(code, language: codeBlock.language))</code></pre>\n"
+    }
+
+    /// Wraps recognised tokens in spans so exported code reads the same as in the editor.
+    static func highlight(_ code: String, language: String?) -> String {
+        let spans = SyntaxHighlighter.spans(in: code, language: language)
+        guard !spans.isEmpty else { return escape(code) }
+
+        let text = code as NSString
+        var out = ""
+        var index = 0
+        for span in spans {
+            guard span.range.location >= index, NSMaxRange(span.range) <= text.length else { continue }
+            out += escape(text.substring(with: NSRange(location: index, length: span.range.location - index)))
+            let token = text.substring(with: span.range)
+            out += "<span class=\"tok-\(name(for: span.token))\">\(escape(token))</span>"
+            index = NSMaxRange(span.range)
+        }
+        out += escape(text.substring(from: index))
+        return out
+    }
+
+    private static func name(for token: SyntaxHighlighter.Token) -> String {
+        switch token {
+        case .keyword: return "keyword"
+        case .string: return "string"
+        case .comment: return "comment"
+        case .number: return "number"
+        case .type: return "type"
+        }
     }
 
     mutating func visitBlockQuote(_ blockQuote: BlockQuote) -> String {

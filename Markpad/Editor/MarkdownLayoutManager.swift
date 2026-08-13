@@ -294,10 +294,11 @@ final class MarkdownLayoutManager: NSLayoutManager {
             theme.link.setFill()
             path.fill()
 
+            // Text view coordinates are flipped, so the tick's low point has the larger y.
             let tick = NSBezierPath()
-            tick.move(to: CGPoint(x: box.minX + side * 0.24, y: box.midY + side * 0.02))
-            tick.line(to: CGPoint(x: box.minX + side * 0.43, y: box.minY + side * 0.26))
-            tick.line(to: CGPoint(x: box.minX + side * 0.78, y: box.maxY - side * 0.26))
+            tick.move(to: CGPoint(x: box.minX + side * 0.24, y: box.minY + side * 0.50))
+            tick.line(to: CGPoint(x: box.minX + side * 0.44, y: box.minY + side * 0.70))
+            tick.line(to: CGPoint(x: box.minX + side * 0.78, y: box.minY + side * 0.32))
             tick.lineWidth = max(side * 0.14, 1.5)
             tick.lineCapStyle = .round
             tick.lineJoinStyle = .round

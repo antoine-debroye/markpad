@@ -31,7 +31,30 @@ final class HTMLExporterTests: XCTestCase {
     func testCodeBlockCarriesLanguageAndEscapes() {
         let html = fragment("```swift\nlet a = 1 < 2\n```")
         XCTAssertTrue(html.contains("<pre><code class=\"language-swift\">"), html)
-        XCTAssertTrue(html.contains("let a = 1 &lt; 2"), html)
+        // Tokens are wrapped in spans for colouring, so the check is that the source
+        // characters survive escaped rather than that the line appears verbatim.
+        XCTAssertTrue(html.contains("&lt;"), html)
+        XCTAssertFalse(html.contains("1 < 2"), "raw < must not reach the output")
+        XCTAssertTrue(html.contains(">let</span>"), html)
+    }
+
+    func testCodeBlockTokensAreWrappedForColouring() {
+        let html = fragment("```swift\nlet a = \"hi\" // note\n```")
+        XCTAssertTrue(html.contains("<span class=\"tok-keyword\">let</span>"), html)
+        XCTAssertTrue(html.contains("<span class=\"tok-string\">&quot;hi&quot;</span>"), html)
+        XCTAssertTrue(html.contains("<span class=\"tok-comment\">// note</span>"), html)
+    }
+
+    func testHighlightingStillEscapesTheSurroundingCode() {
+        let html = fragment("```swift\nlet a = 1 < 2 && b\n```")
+        XCTAssertTrue(html.contains("&lt;"), html)
+        XCTAssertTrue(html.contains("&amp;&amp;"), html)
+    }
+
+    func testUnknownLanguageIsLeftPlain() {
+        let html = fragment("```unknownlang\nsome code\n```")
+        XCTAssertFalse(html.contains("tok-"), html)
+        XCTAssertTrue(html.contains("some code"), html)
     }
 
     func testTaskListRendersCheckboxes() {

@@ -35,6 +35,17 @@ struct EditorTheme {
     var tableBorder: NSColor { dynamic(\.tableBorder, "tableBorder") }
     var syntaxMarker: NSColor { dynamic(\.syntaxMarker, "syntaxMarker") }
 
+    /// Colour for a code token.
+    func color(for token: SyntaxHighlighter.Token) -> NSColor {
+        switch token {
+        case .keyword: return dynamic(\.codeKeyword, "codeKeyword")
+        case .string: return dynamic(\.codeString, "codeString")
+        case .comment: return dynamic(\.codeComment, "codeComment")
+        case .number: return dynamic(\.codeNumber, "codeNumber")
+        case .type: return dynamic(\.codeType, "codeType")
+        }
+    }
+
     // MARK: Metrics
 
     var baseFontSize: CGFloat { CGFloat(tokens.baseFontSize) }

@@ -20,6 +20,12 @@ public struct MarkdownTheme: Sendable, Equatable {
         public var tableHeaderBackground: String
         public var syntaxMarker: String
         public var selection: String
+        /// Code token colours.
+        public var codeKeyword: String
+        public var codeString: String
+        public var codeComment: String
+        public var codeNumber: String
+        public var codeType: String
 
         public init(
             background: String,
@@ -35,7 +41,12 @@ public struct MarkdownTheme: Sendable, Equatable {
             tableBorder: String,
             tableHeaderBackground: String,
             syntaxMarker: String,
-            selection: String
+            selection: String,
+            codeKeyword: String,
+            codeString: String,
+            codeComment: String,
+            codeNumber: String,
+            codeType: String
         ) {
             self.background = background
             self.text = text
@@ -51,6 +62,11 @@ public struct MarkdownTheme: Sendable, Equatable {
             self.tableHeaderBackground = tableHeaderBackground
             self.syntaxMarker = syntaxMarker
             self.selection = selection
+            self.codeKeyword = codeKeyword
+            self.codeString = codeString
+            self.codeComment = codeComment
+            self.codeNumber = codeNumber
+            self.codeType = codeType
         }
     }
 
@@ -108,7 +124,12 @@ public struct MarkdownTheme: Sendable, Equatable {
             tableBorder: "#dcdce1",
             tableHeaderBackground: "#f7f7f9",
             syntaxMarker: "#b8b8bf",
-            selection: "#b3d7ff"
+            selection: "#b3d7ff",
+            codeKeyword: "#9b2393",
+            codeString: "#c41a16",
+            codeComment: "#707f8c",
+            codeNumber: "#1c00cf",
+            codeType: "#0b4f79"
         ),
         dark: Palette(
             background: "#1c1c1e",
@@ -124,7 +145,12 @@ public struct MarkdownTheme: Sendable, Equatable {
             tableBorder: "#3a3a3c",
             tableHeaderBackground: "#2c2c2e",
             syntaxMarker: "#5c5c61",
-            selection: "#2f5d8f"
+            selection: "#2f5d8f",
+            codeKeyword: "#ff7ab2",
+            codeString: "#ff8170",
+            codeComment: "#7f8c98",
+            codeNumber: "#d9c97c",
+            codeType: "#6bdfff"
         )
     )
 }

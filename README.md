@@ -3,6 +3,7 @@
 A native macOS Markdown editor and conversion hub. Swift and AppKit throughout — no Electron, no web view in the editor.
 
 - **Typora-style editing.** One pane. Markdown renders as you type; the block your caret is in reveals its raw syntax and re-renders when you leave it.
+- **Tables as tables, pictures as pictures.** Tables are drawn as grids, images appear in place, code blocks are coloured by language, and task boxes are clickable.
 - **Convert anything.** Markdown → Word (`.docx`), HTML, plain text. PDF → Markdown. Images → Markdown via on-device text recognition.
 - **One click from anywhere.** Shortcuts actions for every conversion, so a Finder Quick Action or a hotkey does the whole job.
 - **Quick Look.** Press Space on a `.md` file in the Finder and see it formatted.
@@ -54,10 +55,19 @@ The text storage always holds the raw Markdown source, unchanged. Rendering come
 
 Because the text is never rewritten, saving, undo, find and copy all operate on exactly what the author typed, and there is no source map to fall out of sync. When the caret enters a block, that block's markers regain their width; when it leaves, they collapse again.
 
-Two details that are easy to get wrong and are covered by tests:
+Tables and images use the same idea. A table's `|` becomes a control glyph whose width is exactly the distance to the next column boundary, so cells line up without a character being moved; an image's first character becomes a box the size of the picture, and the line grows to fit it. Both revert to plain source when the caret enters the block, so everything stays editable.
+
+Three details that are easy to get wrong and are covered by tests:
 
 - **Offsets.** cmark reports positions as UTF-8 byte columns while `NSTextStorage` counts UTF-16 units. Every document containing an emoji, an accent or CJK text puts the two out of step, so all conversion goes through `SourceIndex`.
 - **Quick Look and untrusted files.** Markdown permits inline HTML, and exports pass it through. Previews do not: Quick Look renders files the user merely selected in the Finder, so embedded markup is escaped rather than executed.
+- **Nothing disappears.** An image that is missing or still loading keeps its Markdown on screen, and a table too wide for the window keeps its pipes, rather than leaving a blank gap where content should be.
+
+### Why the sandbox is off
+
+A sandboxed document app may read the file it was handed and nothing beside it, so `![diagram](images/flow.png)` could never be displayed — the picture is a sibling file the app is not allowed to open. Since Markpad is distributed with Developer ID rather than through the App Store, where the sandbox is optional, it runs unsandboxed so relative image paths work.
+
+The alternative is to keep the sandbox and ask for folder access through an open panel, storing a security-scoped bookmark per folder. That puts a permission dialog in front of ordinary Markdown files. `Markpad/Markpad.entitlements` carries the reasoning and re-enabling the sandbox is a one-line change; inline images with relative paths stop working, and everything else continues to.
 
 ### Dependencies
 
@@ -93,7 +103,8 @@ This needs a paid Apple Developer account: a Developer ID certificate in your ke
 
 ## Known limits
 
-- Tables render as aligned monospaced source rather than a drawn grid.
-- Images show their Markdown syntax instead of the picture; they are embedded properly in HTML and Word exports.
+- A table wider than the window keeps its pipe syntax rather than being drawn as a grid, since a clipped grid would hide content. Narrowing the columns or widening the window renders it.
+- Syntax highlighting is a tokenizer, not a parser: it colours comments, strings, numbers, keywords and type names, which covers reading code in a document but will not match a full language grammar.
 - PDF extraction targets single-column documents. Multi-column layouts, footnotes and complex tables are best effort.
-- Code blocks are not syntax-highlighted by language.
+- Remote images (`https://…`) are not downloaded; an editor should not make network requests while you type. Local images render.
+- No Mermaid or LaTeX rendering.

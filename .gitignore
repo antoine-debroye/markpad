@@ -1,0 +1,11 @@
+.DS_Store
+*.xcodeproj/
+!project.yml
+.build/
+DerivedData/
+build/
+*.xcuserstate
+xcuserdata/
+.swiftpm/
+dist/
+*.zip

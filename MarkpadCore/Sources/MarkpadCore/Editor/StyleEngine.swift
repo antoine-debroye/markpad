@@ -13,15 +13,14 @@ public struct StyleEngine: Sendable {
         let index = SourceIndex(source: source)
         var builder = LayoutBuilder(source: source as NSString, index: index)
         builder.walk(MarkdownParsing.document(source))
-        return builder.layout
+        var layout = builder.layout
+        layout.images = builder.images
+        return layout
     }
 
     /// Images found in the source, with the range of the syntax that produced them.
     public func images(in source: String) -> [ImagePlacement] {
-        let index = SourceIndex(source: source)
-        var builder = LayoutBuilder(source: source as NSString, index: index)
-        builder.walk(MarkdownParsing.document(source))
-        return builder.images
+        layout(for: source).images
     }
 }
 
@@ -136,6 +135,13 @@ private struct LayoutBuilder {
         case let table as Markdown.Table:
             addBlock(table, kind: .table)
             visitTableCells(table)
+            if let range = range(of: table),
+               let structure = TableParser.parse(source: source, range: range, index: index) {
+                layout.tables.append(structure)
+                // The pipes are deliberately not marked as hidden syntax. They disappear
+                // only when the editor can draw the table as a grid, so a table too wide to
+                // draw keeps its delimiters and stays readable as source.
+            }
 
         case is HTMLBlock:
             addBlock(markup, kind: .html)
@@ -285,7 +291,10 @@ private struct LayoutBuilder {
                         source: image.source ?? "",
                         alt: image.plainText
                     ))
-                    addMarkers([range])
+                    // The syntax is not marked as hidden here. It disappears only once the
+                    // editor has a picture to put in its place, so a missing or still
+                    // loading image shows its Markdown instead of a blank gap.
+                    addInline(range, traits: .code)
                 }
 
             default:

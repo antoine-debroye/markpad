@@ -12,6 +12,43 @@ struct MarkdownStyler {
     /// Attribute key marking a link destination, used for click handling.
     static let linkDestination = NSAttributedString.Key("markpad.link")
 
+    /// Styles a table that is being drawn as a grid: header cells stand out and the
+    /// `|---|---|` line collapses to a hairline where the header rule is drawn.
+    func applyTable(_ structure: TableStructure, scale: CGFloat, to storage: NSTextStorage) {
+        for row in structure.rows {
+            let range = clamp(row.range, in: storage)
+            guard range.length > 0 else { continue }
+
+            let style = NSMutableParagraphStyle()
+            style.lineHeightMultiple = 1.0
+            style.paragraphSpacing = 0
+            style.lineBreakMode = .byClipping
+            storage.addAttribute(.paragraphStyle, value: style, range: range)
+
+            let size = theme.baseFontSize * scale * 0.96
+            let font = NSFont.systemFont(ofSize: size, weight: row.isHeader ? .semibold : .regular)
+            storage.addAttributes([
+                .font: font,
+                .foregroundColor: theme.text
+            ], range: range)
+        }
+
+        if let separator = structure.separatorRange {
+            let range = clamp(separator, in: storage)
+            guard range.length > 0 else { return }
+            // The characters stay in the source but take almost no room; the rule between
+            // header and body is drawn in the space they leave.
+            let style = NSMutableParagraphStyle()
+            style.lineHeightMultiple = 0.01
+            style.paragraphSpacing = 0
+            storage.addAttributes([
+                .font: NSFont.systemFont(ofSize: 1),
+                .foregroundColor: NSColor.clear,
+                .paragraphStyle: style
+            ], range: range)
+        }
+    }
+
     func apply(layout: MarkdownLayout, to storage: NSTextStorage, activeRanges: [NSRange]) {
         let fullRange = NSRange(location: 0, length: storage.length)
         guard fullRange.length > 0 else { return }

@@ -43,7 +43,7 @@ targets:
         PRODUCT_NAME: Markpad
         CODE_SIGN_ENTITLEMENTS: Markpad/Markpad.entitlements
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-        ENABLE_APP_SANDBOX: YES
+        ENABLE_APP_SANDBOX: NO
         COMBINE_HIDPI_IMAGES: YES
         LD_RUNPATH_SEARCH_PATHS: ["$(inherited)", "@executable_path/../Frameworks"]
     info:
@@ -127,7 +127,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.antoinedebroye.markpad.quicklook
         PRODUCT_NAME: MarkpadQuickLook
         CODE_SIGN_ENTITLEMENTS: MarkpadQuickLook/MarkpadQuickLook.entitlements
-        ENABLE_APP_SANDBOX: YES
+        ENABLE_APP_SANDBOX: NO
         SKIP_INSTALL: YES
     info:
       path: MarkpadQuickLook/Info.plist

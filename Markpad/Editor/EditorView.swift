@@ -25,6 +25,9 @@ struct EditorView: NSViewRepresentable {
 
         let container = NSTextContainer(size: CGSize(width: 0, height: CGFloat.greatestFiniteMagnitude))
         container.widthTracksTextView = true
+        // No implicit padding: table columns are positioned from the line's own origin, so
+        // the text must start exactly at the container edge.
+        container.lineFragmentPadding = 0
         layoutManager.addTextContainer(container)
 
         let textView = MarkdownTextView(frame: .zero, textContainer: container)
@@ -67,7 +70,18 @@ struct EditorView: NSViewRepresentable {
         coordinator.theme = theme
         coordinator.documentDirectory = documentDirectory
         coordinator.observeCommands()
-        coordinator.restyle(force: true)
+        // Table columns are measured against the available width, so the first styling pass
+        // waits until the view has been given its real size.
+        DispatchQueue.main.async { coordinator.restyle(force: true) }
+
+        textView.postsFrameChangedNotifications = true
+        NotificationCenter.default.addObserver(
+            forName: NSView.frameDidChangeNotification,
+            object: textView,
+            queue: .main
+        ) { [weak coordinator] _ in
+            coordinator?.reflowTables()
+        }
 
         let scrollView = NSScrollView()
         scrollView.documentView = textView
@@ -80,8 +94,14 @@ struct EditorView: NSViewRepresentable {
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         let coordinator = context.coordinator
-        coordinator.documentDirectory = documentDirectory
         guard let textView = coordinator.textView else { return }
+
+        // A new document has no URL until it is saved, and SwiftUI can supply the URL after
+        // the editor is built, so relative image paths only become resolvable here.
+        if coordinator.documentDirectory != documentDirectory {
+            coordinator.documentDirectory = documentDirectory
+            coordinator.reloadImages()
+        }
 
         // Only push text in when the change came from outside the editor (a revert, or an
         // undo driven by the document); otherwise typing would fight the binding.
@@ -123,6 +143,7 @@ final class EditorCoordinator: NSObject, NSTextViewDelegate, NSTextStorageDelega
     var documentDirectory: URL?
 
     private let engine = StyleEngine()
+    private let imageStore = ImageStore()
     private var layout = MarkdownLayout()
     private var activeRanges: [NSRange] = []
     private var restyleWorkItem: DispatchWorkItem?
@@ -164,15 +185,116 @@ final class EditorCoordinator: NSObject, NSTextViewDelegate, NSTextStorageDelega
         activeRanges = layout.activeBlockRanges(for: textView.selectedRange())
 
         MarkdownStyler(theme: theme).apply(layout: layout, to: storage, activeRanges: activeRanges)
+        buildTableGeometry()
+        prepareImages()
         applyConcealment()
         publishStatus()
+    }
+
+    /// Starts loading the pictures the document refers to, and drops any it no longer uses.
+    private func prepareImages() {
+        guard let textView, let layoutManager else { return }
+        imageStore.documentDirectory = documentDirectory
+        imageStore.onLoad = { [weak self] in
+            // A picture that has just loaded changes the height of its line.
+            self?.reflowImages()
+        }
+        imageStore.retain(sources: layout.images.map(\.source))
+        for placement in layout.images {
+            imageStore.prepare(placement.source)
+        }
+
+        layoutManager.imageStore = imageStore
+        let width = textView.textContainer?.size.width ?? textView.bounds.width
+        layoutManager.contentWidth = width
+
+        // A picture replaces its syntax only once it has actually loaded, and only when the
+        // caret is elsewhere. An image that is still loading, missing or unreadable keeps
+        // its Markdown visible rather than leaving a blank gap in the document.
+        layoutManager.images = layout.images.filter { placement in
+            guard imageStore.entry(for: placement.source, availableWidth: width) != nil else { return false }
+            return !activeRanges.contains { NSIntersectionRange($0, placement.range).length > 0 }
+        }
+    }
+
+    /// Re-resolves every image, used when the document's folder becomes known.
+    func reloadImages() {
+        guard !layout.images.isEmpty else { return }
+        reflowImages()
+    }
+
+    /// Re-runs image placement after one finishes loading or the window resizes.
+    private func reflowImages() {
+        guard let textView, let layoutManager, let storage = textView.textStorage, !isStyling else { return }
+        isStyling = true
+        prepareImages()
+        isStyling = false
+        applyConcealment()
+        _ = layoutManager
+        _ = storage
+    }
+
+    /// Re-measures tables after a resize. Column widths depend on the window, and a table
+    /// that did not fit before may fit now (or the reverse).
+    func reflowTables() {
+        guard !layout.tables.isEmpty, !isStyling else { return }
+        isStyling = true
+        buildTableGeometry()
+        isStyling = false
+        applyConcealment()
+    }
+
+    /// Measures each table that should be drawn as a grid.
+    ///
+    /// A table the caret is inside stays as raw source so it can be edited, and one too wide
+    /// for the window is left as aligned text rather than drawn as a broken grid.
+    private func buildTableGeometry() {
+        guard let textView, let layoutManager, let storage = textView.textStorage else { return }
+        // The container already excludes the view's inset when it tracks the view's width.
+        let available = textView.textContainer?.size.width
+            ?? (textView.bounds.width - textView.textContainerInset.width * 2)
+
+        let styler = MarkdownStyler(theme: theme)
+        var geometries: [TableGeometry] = []
+
+        for structure in layout.tables {
+            let isActive = activeRanges.contains { NSIntersectionRange($0, structure.range).length > 0 }
+            guard !isActive else { continue }
+            guard let geometry = TableGeometry(
+                structure: structure,
+                storage: storage,
+                availableWidth: max(available, 120),
+                theme: theme
+            ) else { continue }
+
+            styler.applyTable(structure, scale: geometry.scale, to: storage)
+            geometries.append(geometry)
+        }
+        layoutManager.tables = geometries
     }
 
     /// Recomputes which markers are collapsed and repaints the affected paragraphs.
     private func applyConcealment() {
         guard let textView, let layoutManager, let storage = textView.textStorage else { return }
 
-        let concealed = layout.concealedMarkers(selection: textView.selectedRange()).map(\.range)
+        var concealed = layout.concealedMarkers(selection: textView.selectedRange()).map(\.range)
+        // A table drawn as a grid hides its separator line; the pipes are handled as column
+        // gaps rather than concealed, so they are excluded here.
+        let delimiters = Set(layoutManager.tables.flatMap { $0.structure.delimiters.map(\.location) })
+        concealed.removeAll { delimiters.contains($0.location) }
+        for table in layoutManager.tables {
+            if let separator = table.structure.separatorRange {
+                concealed.append(separator)
+            }
+        }
+        // An image's syntax collapses behind the picture, except for the first character,
+        // which is the box the picture is drawn into.
+        for placement in layoutManager.images where placement.range.length > 1 {
+            concealed.append(NSRange(
+                location: placement.range.location + 1,
+                length: placement.range.length - 1
+            ))
+        }
         let painted = layout.markers.filter { marker in
             switch marker.presentation {
             case .bullet, .checkbox:

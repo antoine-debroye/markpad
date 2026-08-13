@@ -2,8 +2,22 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!--
+	  The sandbox is off deliberately.
+
+	  A sandboxed document app is granted access to the file the user opened and nothing
+	  beside it, so `![diagram](images/flow.png)` could not be displayed: the picture lives
+	  in a sibling path the app may not read. Showing images in place is a core part of what
+	  this app is for, and the alternative — asking the user to grant folder access, then
+	  storing security-scoped bookmarks — puts a permission dialog in front of ordinary
+	  Markdown files.
+
+	  Markpad is distributed with Developer ID rather than through the App Store, where the
+	  sandbox is optional. Set this back to <true/> to re-enable it; inline images with
+	  relative paths stop working, and everything else continues to.
+	-->
 	<key>com.apple.security.app-sandbox</key>
-	<true/>
+	<false/>
 	<key>com.apple.security.files.user-selected.read-write</key>
 	<true/>
 	<key>com.apple.security.files.bookmarks.app-scope</key>

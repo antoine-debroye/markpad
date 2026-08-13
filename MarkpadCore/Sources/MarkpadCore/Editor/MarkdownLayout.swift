@@ -7,11 +7,26 @@ public struct MarkdownLayout: Sendable, Equatable {
     public var blocks: [BlockRun]
     public var inlines: [InlineRun]
     public var markers: [Marker]
+    public var tables: [TableStructure]
+    public var images: [ImagePlacement]
 
-    public init(blocks: [BlockRun] = [], inlines: [InlineRun] = [], markers: [Marker] = []) {
+    public init(
+        blocks: [BlockRun] = [],
+        inlines: [InlineRun] = [],
+        markers: [Marker] = [],
+        tables: [TableStructure] = [],
+        images: [ImagePlacement] = []
+    ) {
         self.blocks = blocks
         self.inlines = inlines
         self.markers = markers
+        self.tables = tables
+        self.images = images
+    }
+
+    /// True when the caret sits inside `range`, meaning its raw source should be shown.
+    public func isActive(_ range: NSRange, selection: NSRange) -> Bool {
+        activeBlockRanges(for: selection).contains { NSIntersectionRange($0, range).length > 0 }
     }
 
     /// Leaf blocks intersecting `selection` — the blocks whose raw syntax should be revealed

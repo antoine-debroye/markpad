@@ -1,0 +1,140 @@
+name: Markpad
+options:
+  bundleIdPrefix: com.antoinedebroye
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+  generateEmptyDirectories: true
+
+packages:
+  MarkpadCore:
+    path: MarkpadCore
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    ENABLE_HARDENED_RUNTIME: YES
+    # Ad-hoc signing so the project builds and runs on any Mac without a developer
+    # account. scripts/notarize.sh overrides this with a Developer ID identity.
+    CODE_SIGN_STYLE: Manual
+    CODE_SIGN_IDENTITY: "-"
+    DEVELOPMENT_TEAM: ""
+    DEAD_CODE_STRIPPING: YES
+    SWIFT_TREAT_WARNINGS_AS_ERRORS: NO
+    GCC_TREAT_WARNINGS_AS_ERRORS: NO
+
+targets:
+  Markpad:
+    type: application
+    platform: macOS
+    sources:
+      - path: Markpad
+    dependencies:
+      - package: MarkpadCore
+        product: MarkpadCore
+      - target: MarkpadQuickLook
+        embed: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.antoinedebroye.markpad
+        PRODUCT_NAME: Markpad
+        CODE_SIGN_ENTITLEMENTS: Markpad/Markpad.entitlements
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ENABLE_APP_SANDBOX: YES
+        COMBINE_HIDPI_IMAGES: YES
+        LD_RUNPATH_SEARCH_PATHS: ["$(inherited)", "@executable_path/../Frameworks"]
+    info:
+      path: Markpad/Info.plist
+      properties:
+        CFBundleName: Markpad
+        CFBundleDisplayName: Markpad
+        CFBundlePackageType: APPL
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSMinimumSystemVersion: $(MACOSX_DEPLOYMENT_TARGET)
+        LSApplicationCategoryType: public.app-category.productivity
+        NSHumanReadableCopyright: ""
+        NSSupportsAutomaticTermination: true
+        NSSupportsSuddenTermination: true
+        ITSAppUsesNonExemptEncryption: false
+        # net.daringfireball.markdown is not declared by the system, so Markpad imports it.
+        # Without this, the open panel and DocumentGroup treat .md files as unknown.
+        UTImportedTypeDeclarations:
+          - UTTypeIdentifier: net.daringfireball.markdown
+            UTTypeDescription: Markdown Document
+            UTTypeConformsTo:
+              - public.plain-text
+            UTTypeTagSpecification:
+              public.filename-extension:
+                - md
+                - markdown
+                - mdown
+                - mkd
+                - mdtext
+              public.mime-type:
+                - text/markdown
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: Markdown Document
+            CFBundleTypeRole: Editor
+            LSHandlerRank: Owner
+            LSItemContentTypes:
+              - net.daringfireball.markdown
+          - CFBundleTypeName: Plain Text Document
+            CFBundleTypeRole: Editor
+            LSHandlerRank: Alternate
+            LSItemContentTypes:
+              - public.plain-text
+          - CFBundleTypeName: PDF Document
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: None
+            LSItemContentTypes:
+              - com.adobe.pdf
+          - CFBundleTypeName: Image
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: None
+            LSItemContentTypes:
+              - public.image
+
+  MarkpadQuickLook:
+    type: app-extension
+    platform: macOS
+    sources:
+      - path: MarkpadQuickLook
+    dependencies:
+      - package: MarkpadCore
+        product: MarkpadCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.antoinedebroye.markpad.quicklook
+        PRODUCT_NAME: MarkpadQuickLook
+        CODE_SIGN_ENTITLEMENTS: MarkpadQuickLook/MarkpadQuickLook.entitlements
+        ENABLE_APP_SANDBOX: YES
+        SKIP_INSTALL: YES
+    info:
+      path: MarkpadQuickLook/Info.plist
+      properties:
+        CFBundleName: MarkpadQuickLook
+        CFBundleDisplayName: Markpad Preview
+        CFBundlePackageType: XPC!
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.quicklook.preview
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).PreviewProvider
+          NSExtensionAttributes:
+            QLSupportedContentTypes:
+              - net.daringfireball.markdown
+            QLSupportsSearchableItems: false
+
+schemes:
+  Markpad:
+    build:
+      targets:
+        Markpad: all
+    run:
+      config: Debug
+    archive:
+      config: Release

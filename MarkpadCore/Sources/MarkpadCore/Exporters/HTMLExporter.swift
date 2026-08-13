@@ -15,17 +15,26 @@ public struct HTMLExporter: Sendable {
         /// Maps a Markdown image source to the `src` used in the output. Returning `nil` keeps
         /// the original value. Used to inline local images as data URIs.
         public var imageResolver: (@Sendable (String) -> String?)?
+        /// Pass embedded HTML through untouched.
+        ///
+        /// Markdown permits inline HTML, so this is on for documents the user chose to
+        /// export. It must be off when rendering a file the user has merely selected — a
+        /// Quick Look preview — where passing through markup would let an untrusted file run
+        /// script in the preview.
+        public var allowsRawHTML: Bool
 
         public init(
             standalone: Bool = true,
             title: String? = nil,
             theme: MarkdownTheme = .default,
-            imageResolver: (@Sendable (String) -> String?)? = nil
+            imageResolver: (@Sendable (String) -> String?)? = nil,
+            allowsRawHTML: Bool = true
         ) {
             self.standalone = standalone
             self.title = title
             self.theme = theme
             self.imageResolver = imageResolver
+            self.allowsRawHTML = allowsRawHTML
         }
     }
 
@@ -270,10 +279,13 @@ struct HTMLRenderer: MarkupVisitor {
     }
 
     mutating func visitHTMLBlock(_ html: HTMLBlock) -> String {
-        html.rawHTML
+        guard options.allowsRawHTML else {
+            return "<p>\(Self.escape(html.rawHTML))</p>\n"
+        }
+        return html.rawHTML
     }
 
     mutating func visitInlineHTML(_ inlineHTML: InlineHTML) -> String {
-        inlineHTML.rawHTML
+        options.allowsRawHTML ? inlineHTML.rawHTML : Self.escape(inlineHTML.rawHTML)
     }
 }

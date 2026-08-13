@@ -98,6 +98,22 @@ targets:
             LSItemContentTypes:
               - public.image
 
+  MarkpadTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: MarkpadTests
+    dependencies:
+      - target: Markpad
+      - package: MarkpadCore
+        product: MarkpadCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.antoinedebroye.markpad.tests
+        # The editor is exercised directly against AppKit, with no app host: TextKit lays
+        # out text fine in a plain test process, and skipping the host keeps the suite fast.
+        GENERATE_INFOPLIST_FILE: YES
+
   MarkpadQuickLook:
     type: app-extension
     platform: macOS
@@ -134,7 +150,12 @@ schemes:
     build:
       targets:
         Markpad: all
+        MarkpadTests: [test]
     run:
       config: Debug
+    test:
+      config: Debug
+      targets:
+        - MarkpadTests
     archive:
       config: Release

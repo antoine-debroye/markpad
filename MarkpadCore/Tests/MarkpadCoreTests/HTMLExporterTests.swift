@@ -62,6 +62,23 @@ final class HTMLExporterTests: XCTestCase {
         XCTAssertTrue(html.contains("alt=\"alt\""), html)
     }
 
+    func testRawHTMLPassesThroughWhenExportingYourOwnDocument() {
+        // Markdown permits inline HTML, and an export is an explicit act by the author.
+        let html = fragment("<div class=\"note\">kept</div>")
+        XCTAssertTrue(html.contains("<div class=\"note\">kept</div>"), html)
+    }
+
+    func testRawHTMLIsNeutralisedWhenDisallowed() {
+        let options = HTMLExporter.Options(standalone: false, allowsRawHTML: false)
+        let block = exporter.export(markdown: "<script>alert(1)</script>", options: options)
+        XCTAssertFalse(block.contains("<script>"), block)
+        XCTAssertTrue(block.contains("&lt;script&gt;"), block)
+
+        let inline = exporter.export(markdown: "text <img src=x onerror=alert(1)> more", options: options)
+        XCTAssertFalse(inline.contains("<img src=x"), inline)
+        XCTAssertTrue(inline.contains("&lt;img"), inline)
+    }
+
     func testStandaloneDocumentEmbedsThemeAndTitle() {
         let html = exporter.export(markdown: "# My Title\n\nBody.")
         XCTAssertTrue(html.hasPrefix("<!DOCTYPE html>"))

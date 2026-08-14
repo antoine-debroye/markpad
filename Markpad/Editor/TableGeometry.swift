@@ -19,6 +19,9 @@ struct TableGeometry {
     private let delimiterTargets: [Int: CGFloat]
     /// Font scale applied to make a wide table fit.
     let scale: CGFloat
+    /// False when the table is wider than the window even at the smallest scale, in which
+    /// case the editor scrolls horizontally to reach it.
+    let fitsAvailableWidth: Bool
 
     var width: CGFloat { boundaries.last ?? 0 }
 
@@ -32,33 +35,38 @@ struct TableGeometry {
         return max(target - penX, Self.minimumGap)
     }
 
+    /// Largest grid the editor will lay out, a guard against a pathological document.
+    private static let maximumWidth: CGFloat = 12_000
+
     /// Measures a table against the styled text.
     ///
-    /// Returns nil when the table cannot be drawn as a grid in the space available, in which
-    /// case the editor leaves it as aligned source rather than showing a broken table.
-    init?(structure: TableStructure, storage: NSTextStorage, availableWidth: CGFloat, theme: EditorTheme) {
+    /// A table that nearly fits is shrunk slightly to avoid a scroll bar; one that cannot
+    /// fit keeps its natural size and is reached by scrolling, which beats clipping it or
+    /// squeezing the text until it is unreadable.
+    init(structure: TableStructure, storage: NSTextStorage, availableWidth: CGFloat, theme: EditorTheme) {
         self.structure = structure
 
-        // Try the natural size first, then progressively smaller text before giving up.
-        let candidates: [CGFloat] = [1.0, 0.92, 0.84, 0.76]
+        let candidates: [CGFloat] = [1.0, 0.94, 0.88]
         var chosen: (widths: [CGFloat], scale: CGFloat)?
 
         for candidate in candidates {
             let widths = Self.columnWidths(structure: structure, storage: storage, scale: candidate)
-            let total = widths.reduce(0, +)
-            if total <= availableWidth {
+            if widths.reduce(0, +) <= availableWidth {
                 chosen = (widths, candidate)
                 break
             }
         }
-        guard let chosen else { return nil }
+
+        let resolved = chosen ?? (Self.columnWidths(structure: structure, storage: storage, scale: 1), 1)
+        self.fitsAvailableWidth = chosen != nil
+        self.scale = resolved.scale
 
         var boundaries: [CGFloat] = [0]
-        for width in chosen.widths {
-            boundaries.append((boundaries.last ?? 0) + width)
+        for width in resolved.widths {
+            let next = (boundaries.last ?? 0) + width
+            boundaries.append(min(next, Self.maximumWidth))
         }
         self.boundaries = boundaries
-        self.scale = chosen.scale
 
         // Map each delimiter to the boundary it should reach. A row that opens with a pipe
         // has one more delimiter than a row that does not, so the offset differs.

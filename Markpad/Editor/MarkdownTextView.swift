@@ -14,6 +14,16 @@ final class MarkdownTextView: NSTextView {
 
     override var acceptsFirstResponder: Bool { true }
 
+    /// Theme colours resolve against the drawing appearance, so a window that is not
+    /// redrawn keeps the old palette when the system switches between light and dark.
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        onAppearanceChange?()
+        needsDisplay = true
+    }
+
+    var onAppearanceChange: (() -> Void)?
+
     // MARK: Clicks
 
     override func mouseDown(with event: NSEvent) {

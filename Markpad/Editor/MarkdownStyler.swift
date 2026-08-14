@@ -8,6 +8,14 @@ import MarkpadCore
 /// styling on its own.
 struct MarkdownStyler {
     var theme: EditorTheme
+    /// When the container has been widened to hold a table, prose is wrapped at this width
+    /// so paragraphs keep a readable measure instead of stretching across the overflow.
+    var wrapWidth: CGFloat?
+
+    init(theme: EditorTheme, wrapWidth: CGFloat? = nil) {
+        self.theme = theme
+        self.wrapWidth = wrapWidth
+    }
 
     /// Attribute key marking a link destination, used for click handling.
     static let linkDestination = NSAttributedString.Key("markpad.link")
@@ -128,6 +136,9 @@ struct MarkdownStyler {
         let style = NSMutableParagraphStyle()
         style.lineHeightMultiple = theme.lineHeightMultiple
         style.paragraphSpacing = theme.paragraphSpacing
+        // A positive tail indent is an absolute line width, which keeps prose readable when
+        // the container has been widened to fit a table.
+        if let wrapWidth { style.tailIndent = wrapWidth }
 
         guard let block else { return style }
 

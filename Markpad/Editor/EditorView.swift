@@ -60,6 +60,11 @@ struct EditorView: NSViewRepresentable {
         textView.onCheckboxToggle = { [weak coordinator] range in
             coordinator?.toggleCheckbox(in: range, textView: textView)
         }
+        textView.onAppearanceChange = { [weak coordinator] in
+            textView.backgroundColor = theme.background
+            textView.insertionPointColor = theme.text
+            coordinator?.restyle(force: true)
+        }
         textView.onLinkActivated = { destination in
             guard let url = URL(string: destination), url.scheme != nil else { return }
             NSWorkspace.shared.open(url)
@@ -149,6 +154,13 @@ final class EditorCoordinator: NSObject, NSTextViewDelegate, NSTextStorageDelega
     private var restyleWorkItem: DispatchWorkItem?
     /// Guards against re-entrancy while the styler writes attributes.
     private var isStyling = false
+    /// Width prose wraps at when the container has been widened for a table. Nil when the
+    /// container matches the window, which is the usual case.
+    private var wrapWidth: CGFloat?
+
+    private var styler: MarkdownStyler {
+        MarkdownStyler(theme: theme, wrapWidth: wrapWidth)
+    }
 
     init(text: Binding<String>, onSelectionChange: ((EditorStatus) -> Void)?) {
         self._text = text
@@ -184,8 +196,18 @@ final class EditorCoordinator: NSObject, NSTextViewDelegate, NSTextStorageDelega
         layout = engine.layout(for: textView.string)
         activeRanges = layout.activeBlockRanges(for: textView.selectedRange())
 
-        MarkdownStyler(theme: theme).apply(layout: layout, to: storage, activeRanges: activeRanges)
+        styler.apply(layout: layout, to: storage, activeRanges: activeRanges)
         buildTableGeometry()
+
+        // Whether prose needs a wrap limit depends on how wide the tables turned out, so the
+        // paragraph styles are settled in a second pass on the rare occasions it changes.
+        let previousWrap = wrapWidth
+        applyContentWidth()
+        if wrapWidth != previousWrap {
+            styler.apply(layout: layout, to: storage, activeRanges: activeRanges)
+            buildTableGeometry()
+        }
+
         prepareImages()
         applyConcealment()
         publishStatus()
@@ -254,23 +276,68 @@ final class EditorCoordinator: NSObject, NSTextViewDelegate, NSTextStorageDelega
         let available = textView.textContainer?.size.width
             ?? (textView.bounds.width - textView.textContainerInset.width * 2)
 
-        let styler = MarkdownStyler(theme: theme)
+        let styler = self.styler
         var geometries: [TableGeometry] = []
 
         for structure in layout.tables {
             let isActive = activeRanges.contains { NSIntersectionRange($0, structure.range).length > 0 }
             guard !isActive else { continue }
-            guard let geometry = TableGeometry(
+
+            let geometry = TableGeometry(
                 structure: structure,
                 storage: storage,
-                availableWidth: max(available, 120),
+                availableWidth: max(visibleWidth, 120),
                 theme: theme
-            ) else { continue }
-
+            )
             styler.applyTable(structure, scale: geometry.scale, to: storage)
             geometries.append(geometry)
         }
         layoutManager.tables = geometries
+        _ = available
+    }
+
+    /// Width of the editor's visible text area, ignoring any horizontal overflow.
+    private var visibleWidth: CGFloat {
+        guard let textView else { return 600 }
+        let scrollWidth = textView.enclosingScrollView?.contentSize.width ?? textView.bounds.width
+        return max(scrollWidth - textView.textContainerInset.width * 2, 120)
+    }
+
+    /// Widens the text container when a table overflows, so it can be reached by scrolling
+    /// sideways. Prose keeps wrapping at the visible width via `wrapWidth`, so widening the
+    /// container for one table does not stretch every paragraph across it.
+    private func applyContentWidth() {
+        guard let textView,
+              let container = textView.textContainer,
+              let scrollView = textView.enclosingScrollView else { return }
+
+        let visible = visibleWidth
+        let widest = layoutManager?.tables.filter { !$0.fitsAvailableWidth }.map(\.width).max() ?? 0
+        let needed = max(widest, visible)
+        let overflows = needed > visible + 1
+
+        wrapWidth = overflows ? visible : nil
+        scrollView.hasHorizontalScroller = overflows
+
+        if overflows {
+            container.widthTracksTextView = false
+            container.size = CGSize(width: needed, height: CGFloat.greatestFiniteMagnitude)
+            textView.isHorizontallyResizable = true
+            textView.autoresizingMask = [.height]
+            textView.minSize = CGSize(width: needed, height: 0)
+            var frame = textView.frame
+            frame.size.width = needed + textView.textContainerInset.width * 2
+            textView.frame = frame
+        } else if !container.widthTracksTextView {
+            container.widthTracksTextView = true
+            textView.isHorizontallyResizable = false
+            textView.autoresizingMask = [.width]
+            textView.minSize = CGSize(width: 0, height: 0)
+            var frame = textView.frame
+            frame.size.width = scrollView.contentSize.width
+            textView.frame = frame
+            container.size = CGSize(width: visible, height: CGFloat.greatestFiniteMagnitude)
+        }
     }
 
     /// Recomputes which markers are collapsed and repaints the affected paragraphs.

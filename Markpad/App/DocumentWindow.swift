@@ -32,6 +32,9 @@ struct DocumentWindow: View {
             .frame(minWidth: 420)
         }
         .focusedSceneValue(\.markdownDocument, FocusedDocument(document: document, fileURL: fileURL))
+        // The count belongs to the document, not to a control: as a subtitle it sits under
+        // the file name as plain text instead of being drawn as another button.
+        .navigationSubtitle(status.words == 1 ? "1 word" : "\(status.words) words")
         .toolbar {
             ToolbarItem(placement: .navigation) {
                 Button {
@@ -45,13 +48,6 @@ struct DocumentWindow: View {
 
             ToolbarItem(placement: .primaryAction) {
                 ExportMenu(document: document, fileURL: fileURL, error: $exportError)
-            }
-
-            ToolbarItem(placement: .status) {
-                Text("\(status.words) words")
-                    .font(.callout)
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
             }
         }
         .alert(item: $exportError) { error in

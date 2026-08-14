@@ -11,6 +11,8 @@ public struct MarkdownLayout: Sendable, Equatable {
     public var images: [ImagePlacement]
     /// Coloured spans inside fenced code blocks.
     public var code: [SyntaxHighlighter.Span]
+    /// Fenced blocks that describe a diagram rather than code.
+    public var diagrams: [DiagramPlacement]
 
     public init(
         blocks: [BlockRun] = [],
@@ -18,7 +20,8 @@ public struct MarkdownLayout: Sendable, Equatable {
         markers: [Marker] = [],
         tables: [TableStructure] = [],
         images: [ImagePlacement] = [],
-        code: [SyntaxHighlighter.Span] = []
+        code: [SyntaxHighlighter.Span] = [],
+        diagrams: [DiagramPlacement] = []
     ) {
         self.blocks = blocks
         self.inlines = inlines
@@ -26,6 +29,7 @@ public struct MarkdownLayout: Sendable, Equatable {
         self.tables = tables
         self.images = images
         self.code = code
+        self.diagrams = diagrams
     }
 
     /// True when the caret sits inside `range`, meaning its raw source should be shown.
@@ -141,6 +145,21 @@ public struct Marker: Sendable, Equatable {
     public init(range: NSRange, presentation: Presentation) {
         self.range = range
         self.presentation = presentation
+    }
+}
+
+/// A fenced block whose contents describe a diagram, such as ```mermaid.
+public struct DiagramPlacement: Sendable, Equatable {
+    /// The whole block, fences included, which the picture replaces.
+    public var range: NSRange
+    /// The diagram description, without the fence lines.
+    public var source: String
+    public var language: String
+
+    public init(range: NSRange, source: String, language: String) {
+        self.range = range
+        self.source = source
+        self.language = language
     }
 }
 

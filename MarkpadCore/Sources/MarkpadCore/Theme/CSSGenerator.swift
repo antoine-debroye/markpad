@@ -107,6 +107,8 @@ public enum CSSGenerator {
           text-align: left;
         }
         thead th { background: var(--mp-table-header-background); font-weight: 620; }
+        .diagram { margin: 1.4em 0; padding: 0; text-align: center; overflow-x: auto; }
+        .diagram svg { max-width: 100%; height: auto; }
         .tok-keyword { color: var(--mp-code-keyword); }
         .tok-string { color: var(--mp-code-string); }
         .tok-comment { color: var(--mp-code-comment); font-style: italic; }

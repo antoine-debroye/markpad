@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<script src="mermaid.min.js"></script>
+<style>
+  html, body { margin: 0; padding: 0; background: transparent; }
+  #out { display: inline-block; padding: 8px; }
+  #out svg { display: block; max-width: none; }
+</style>
+</head>
+<body>
+<div id="out"></div>
+<script>
+  // Rendering is driven from the app: `mermaidRender(source, dark)` returns the SVG and the
+  // size it needs, so the host can size its snapshot to the diagram rather than guessing.
+  mermaid.initialize({ startOnLoad: false, securityLevel: 'strict' });
+
+  let counter = 0;
+
+  async function mermaidRender(source, dark) {
+    mermaid.initialize({
+      startOnLoad: false,
+      securityLevel: 'strict',
+      theme: dark ? 'dark' : 'default',
+      fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif'
+    });
+
+    counter += 1;
+    const { svg } = await mermaid.render('markpad-diagram-' + counter, source);
+
+    const out = document.getElementById('out');
+    out.innerHTML = svg;
+
+    const element = out.querySelector('svg');
+    // Mermaid sizes diagrams with a viewBox and a percentage width; pin both so the
+    // snapshot and the exported SVG have real dimensions.
+    const box = element.getBBox();
+    const width = Math.ceil(box.width + 24);
+    const height = Math.ceil(box.height + 24);
+    element.setAttribute('width', width);
+    element.setAttribute('height', height);
+    element.setAttribute('viewBox', `${box.x - 12} ${box.y - 12} ${width} ${height}`);
+    element.style.width = width + 'px';
+    element.style.height = height + 'px';
+
+    return { svg: out.innerHTML, width: width, height: height };
+  }
+</script>
+</body>
+</html>

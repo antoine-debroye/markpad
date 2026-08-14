@@ -138,6 +138,10 @@ struct OutlineItem: Equatable, Identifiable {
 }
 
 /// Owns the parse → style → conceal cycle for one editor.
+///
+/// Everything here touches the text view, so the whole type is main-actor bound rather than
+/// hopping per call.
+@MainActor
 final class EditorCoordinator: NSObject, NSTextViewDelegate, NSTextStorageDelegate {
     @Binding private var text: String
     private let onSelectionChange: ((EditorStatus) -> Void)?
@@ -226,17 +230,48 @@ final class EditorCoordinator: NSObject, NSTextViewDelegate, NSTextStorageDelega
             imageStore.prepare(placement.source)
         }
 
-        layoutManager.imageStore = imageStore
-        let width = textView.textContainer?.size.width ?? textView.bounds.width
+        let width = visibleWidth
         layoutManager.contentWidth = width
 
-        // A picture replaces its syntax only once it has actually loaded, and only when the
-        // caret is elsewhere. An image that is still loading, missing or unreadable keeps
-        // its Markdown visible rather than leaving a blank gap in the document.
-        layoutManager.images = layout.images.filter { placement in
-            guard imageStore.entry(for: placement.source, availableWidth: width) != nil else { return false }
-            return !activeRanges.contains { NSIntersectionRange($0, placement.range).length > 0 }
+        let isDark = textView.effectiveAppearance
+            .bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        let renderer = MermaidRenderer.shared
+        renderer.onRender = { [weak self] in self?.reflowImages() }
+        renderer.retain(sources: layout.diagrams.map(\.source), dark: isDark)
+        for diagram in layout.diagrams {
+            renderer.prepare(diagram.source, dark: isDark)
         }
+
+        func isActive(_ range: NSRange) -> Bool {
+            activeRanges.contains { NSIntersectionRange($0, range).length > 0 }
+        }
+
+        // A picture replaces its syntax only once it is actually available, and only when
+        // the caret is elsewhere. Anything still loading, missing or unreadable keeps its
+        // Markdown visible rather than leaving a blank gap in the document.
+        var artworks: [MarkdownLayoutManager.Artwork] = []
+
+        for placement in layout.images where !isActive(placement.range) {
+            guard let entry = imageStore.entry(for: placement.source, availableWidth: width) else { continue }
+            artworks.append(.init(range: placement.range, image: entry.image, size: entry.displaySize))
+        }
+
+        for placement in layout.diagrams where !isActive(placement.range) {
+            guard let diagram = renderer.diagram(for: placement.source, dark: isDark) else { continue }
+            artworks.append(.init(
+                range: placement.range,
+                image: diagram.image,
+                size: Self.fit(diagram.size, within: width)
+            ))
+        }
+
+        layoutManager.artworks = artworks.sorted { $0.range.location < $1.range.location }
+    }
+
+    /// Scales a picture down to the available width, never up.
+    private static func fit(_ size: CGSize, within width: CGFloat) -> CGSize {
+        guard size.width > width, size.width > 0 else { return size }
+        return CGSize(width: width, height: size.height * width / size.width)
     }
 
     /// Re-resolves every image, used when the document's folder becomes known.
@@ -354,12 +389,12 @@ final class EditorCoordinator: NSObject, NSTextViewDelegate, NSTextStorageDelega
                 concealed.append(separator)
             }
         }
-        // An image's syntax collapses behind the picture, except for the first character,
-        // which is the box the picture is drawn into.
-        for placement in layoutManager.images where placement.range.length > 1 {
+        // A picture's syntax collapses behind it, except for the first character, which is
+        // the box the picture is drawn into.
+        for artwork in layoutManager.artworks where artwork.range.length > 1 {
             concealed.append(NSRange(
-                location: placement.range.location + 1,
-                length: placement.range.length - 1
+                location: artwork.range.location + 1,
+                length: artwork.range.length - 1
             ))
         }
         let painted = layout.markers.filter { marker in

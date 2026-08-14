@@ -22,19 +22,25 @@ public struct HTMLExporter: Sendable {
         /// Quick Look preview — where passing through markup would let an untrusted file run
         /// script in the preview.
         public var allowsRawHTML: Bool
+        /// Maps a diagram's source to rendered SVG. Diagrams are drawn by the app, which
+        /// owns the renderer; without one they are written out as code, so an export never
+        /// silently loses the diagram's contents.
+        public var diagramResolver: (@Sendable (String) -> String?)?
 
         public init(
             standalone: Bool = true,
             title: String? = nil,
             theme: MarkdownTheme = .default,
             imageResolver: (@Sendable (String) -> String?)? = nil,
-            allowsRawHTML: Bool = true
+            allowsRawHTML: Bool = true,
+            diagramResolver: (@Sendable (String) -> String?)? = nil
         ) {
             self.standalone = standalone
             self.title = title
             self.theme = theme
             self.imageResolver = imageResolver
             self.allowsRawHTML = allowsRawHTML
+            self.diagramResolver = diagramResolver
         }
     }
 
@@ -178,6 +184,11 @@ struct HTMLRenderer: MarkupVisitor {
     }
 
     mutating func visitCodeBlock(_ codeBlock: CodeBlock) -> String {
+        if let name = codeBlock.language, DiagramLanguage.isDiagram(name),
+           let svg = options.diagramResolver?(codeBlock.code) {
+            return "<figure class=\"diagram\">\(svg)</figure>\n"
+        }
+
         let language = codeBlock.language.map { " class=\"language-\(Self.escapeAttribute($0))\"" } ?? ""
         var code = codeBlock.code
         if code.hasSuffix("\n") { code.removeLast() }

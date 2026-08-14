@@ -22,18 +22,43 @@ enum DocumentActions {
 
         panel.begin { response in
             guard response == .OK, let url = panel.url else { return }
-            do {
-                let result = try ConversionService().convert(
-                    markdown: markdown,
-                    to: format,
-                    baseName: baseName,
-                    resourceDirectory: resourceDirectory
-                )
-                try result.data.write(to: url, options: .atomic)
-            } catch {
-                onError(error.localizedDescription)
+            Task { @MainActor in
+                do {
+                    var service = ConversionService()
+                    // HTML carries diagrams as SVG, so they have to be drawn before writing.
+                    if format == .html {
+                        service.diagrams = await renderedDiagrams(in: markdown)
+                    }
+                    let result = try service.convert(
+                        markdown: markdown,
+                        to: format,
+                        baseName: baseName,
+                        resourceDirectory: resourceDirectory
+                    )
+                    try result.data.write(to: url, options: .atomic)
+                } catch {
+                    onError(error.localizedDescription)
+                }
             }
         }
+    }
+
+    /// Renders every diagram in a document, returning source-to-SVG pairs.
+    @MainActor
+    static func renderedDiagrams(in markdown: String) async -> [String: String] {
+        let placements = StyleEngine().layout(for: markdown).diagrams
+        guard !placements.isEmpty else { return [:] }
+
+        var rendered: [String: String] = [:]
+        for placement in placements where rendered[placement.source] == nil {
+            // Exports are viewed in a browser that follows the reader's own appearance, so
+            // the light rendering is the sensible default.
+            if let diagram = await MermaidRenderer.shared
+                .diagramRenderingIfNeeded(placement.source, dark: false) {
+                rendered[placement.source] = diagram.svg
+            }
+        }
+        return rendered
     }
 
     /// Imports a PDF or image, opening the recognised Markdown in a new document.

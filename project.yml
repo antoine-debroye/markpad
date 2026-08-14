@@ -32,6 +32,12 @@ targets:
     platform: macOS
     sources:
       - path: Markpad
+        excludes:
+          - "Resources/Mermaid/**"
+      # Kept as a folder reference so mermaid.min.js and its host page stay side by side in
+      # the bundle, which is what the host page's <script src> expects.
+      - path: Markpad/Resources/Mermaid
+        type: folder
     dependencies:
       - package: MarkpadCore
         product: MarkpadCore

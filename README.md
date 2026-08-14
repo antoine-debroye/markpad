@@ -3,7 +3,7 @@
 A native macOS Markdown editor and conversion hub. Swift and AppKit throughout — no Electron, no web view in the editor.
 
 - **Typora-style editing.** One pane. Markdown renders as you type; the block your caret is in reveals its raw syntax and re-renders when you leave it.
-- **Tables as tables, pictures as pictures.** Tables are drawn as grids, images appear in place, code blocks are coloured by language, and task boxes are clickable.
+- **Tables as tables, pictures as pictures.** Tables are drawn as grids, images and Mermaid diagrams appear in place, code blocks are coloured by language, and task boxes are clickable.
 - **Convert anything.** Markdown → Word (`.docx`), HTML, plain text. PDF → Markdown. Images → Markdown via on-device text recognition.
 - **One click from anywhere.** Shortcuts actions for every conversion, so a Finder Quick Action or a hotkey does the whole job.
 - **Quick Look.** Press Space on a `.md` file in the Finder and see it formatted.
@@ -69,9 +69,15 @@ A sandboxed document app may read the file it was handed and nothing beside it, 
 
 The alternative is to keep the sandbox and ask for folder access through an open panel, storing a security-scoped bookmark per folder. That puts a permission dialog in front of ordinary Markdown files. `Markpad/Markpad.entitlements` carries the reasoning and re-enabling the sandbox is a one-line change; inline images with relative paths stop working, and everything else continues to.
 
+### Diagrams
+
+A ` ```mermaid ` block is drawn as a picture. Mermaid is a JavaScript library, so there is no native path: a hidden web view runs it and returns both an SVG and a snapshot — the snapshot is drawn in the editor, the SVG is embedded in exported HTML so the export needs no scripts to display it.
+
+The library is bundled rather than fetched from a CDN, so diagrams render offline and a document never causes a network request while you type. A diagram that Mermaid cannot parse keeps its source on screen instead of leaving a gap.
+
 ### Dependencies
 
-Only [swift-markdown](https://github.com/swiftlang/swift-markdown). The `.docx` writer emits OOXML directly and packages it with a small built-in ZIP writer, which keeps the app free of a third-party archiver and its signing and notarization overhead.
+[swift-markdown](https://github.com/swiftlang/swift-markdown) for parsing, and a bundled copy of [Mermaid](https://mermaid.js.org) (MIT licensed, `Markpad/Resources/Mermaid/`) for diagrams. The `.docx` writer emits OOXML directly and packages it with a small built-in ZIP writer, which keeps the app free of a third-party archiver and its signing and notarization overhead.
 
 ## Shortcuts
 
@@ -103,7 +109,8 @@ This needs a paid Apple Developer account: a Developer ID certificate in your ke
 
 ## Known limits
 
-- A table wider than the window keeps its pipe syntax rather than being drawn as a grid, since a clipped grid would hide content. Narrowing the columns or widening the window renders it.
+- A table wider than the window is drawn as a grid and reached by scrolling sideways; prose keeps wrapping at the window width while it does.
+- Diagrams appear in the editor and in exported HTML. Word and plain-text exports carry the diagram's source rather than a picture.
 - Syntax highlighting is a tokenizer, not a parser: it colours comments, strings, numbers, keywords and type names, which covers reading code in a document but will not match a full language grammar.
 - PDF extraction targets single-column documents. Multi-column layouts, footnotes and complex tables are best effort.
 - Remote images (`https://…`) are not downloaded; an editor should not make network requests while you type. Local images render.

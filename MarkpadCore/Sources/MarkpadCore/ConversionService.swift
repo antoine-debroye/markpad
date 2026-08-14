@@ -17,9 +17,13 @@ public struct ConversionService: Sendable {
     }
 
     public var theme: MarkdownTheme
+    /// Rendered diagrams, keyed by their source. The app fills this in before exporting;
+    /// anything missing is written out as code rather than dropped.
+    public var diagrams: [String: String]
 
-    public init(theme: MarkdownTheme = .default) {
+    public init(theme: MarkdownTheme = .default, diagrams: [String: String] = [:]) {
         self.theme = theme
+        self.diagrams = diagrams
     }
 
     /// Converts a file on disk into `format`.
@@ -63,16 +67,21 @@ public struct ConversionService: Sendable {
             return Result(data: Data(markdown.utf8), suggestedFilename: filename, format: format)
 
         case .html:
-            let html = HTMLExporter().export(
-                markdown: markdown,
-                options: .init(
-                    title: baseName,
-                    theme: theme,
-                    imageResolver: resourceDirectory.map { directory in
-                        { source in DataURI.inline(source: source, relativeTo: directory) }
-                    }
-                )
-            )
+            var options = HTMLExporter.Options(title: baseName, theme: theme)
+
+            if let directory = resourceDirectory {
+                let resolver: @Sendable (String) -> String? = { source in
+                    DataURI.inline(source: source, relativeTo: directory)
+                }
+                options.imageResolver = resolver
+            }
+            if !diagrams.isEmpty {
+                let rendered = diagrams
+                let resolver: @Sendable (String) -> String? = { source in rendered[source] }
+                options.diagramResolver = resolver
+            }
+
+            let html = HTMLExporter().export(markdown: markdown, options: options)
             return Result(data: Data(html.utf8), suggestedFilename: filename, format: format)
 
         case .plainText:

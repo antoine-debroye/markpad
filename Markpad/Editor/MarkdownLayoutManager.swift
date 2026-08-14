@@ -20,24 +20,22 @@ final class MarkdownLayoutManager: NSLayoutManager {
     var blocks: [BlockRun] = []
     /// Tables currently drawn as grids, with the column positions they were measured at.
     var tables: [TableGeometry] = []
-    /// Images drawn in place of their Markdown syntax.
-    var images: [ImagePlacement] = []
-    var imageStore: ImageStore?
-    /// Width available for drawing, used to fit images to the window.
+    /// A picture drawn in place of the Markdown that produced it — a linked image or a
+    /// rendered diagram. Both are laid out the same way, so they share one path.
+    struct Artwork {
+        /// The syntax the picture replaces.
+        let range: NSRange
+        let image: NSImage
+        let size: CGSize
+    }
+
+    var artworks: [Artwork] = []
+    /// Width available for drawing, used to fit pictures to the window.
     var contentWidth: CGFloat = 600
 
-    /// The image whose syntax starts at `characterIndex`.
-    private func image(startingAt characterIndex: Int) -> ImagePlacement? {
-        images.first { $0.range.location == characterIndex }
-    }
-
-    private func image(containing characterIndex: Int) -> ImagePlacement? {
-        images.first { NSLocationInRange(characterIndex, $0.range) }
-    }
-
-    /// Size an image occupies in the text, or nil while it is still loading.
-    private func displaySize(for placement: ImagePlacement) -> CGSize? {
-        imageStore?.entry(for: placement.source, availableWidth: contentWidth)?.displaySize
+    /// The picture whose syntax starts at `characterIndex`.
+    private func artwork(startingAt characterIndex: Int) -> Artwork? {
+        artworks.first { $0.range.location == characterIndex }
     }
 
     /// The table whose grid contains `characterIndex`, if any.
@@ -237,26 +235,33 @@ final class MarkdownLayoutManager: NSLayoutManager {
 
     /// Draws each picture into the space its syntax reserved.
     private func drawImages(in characterRange: NSRange, origin: NSPoint) {
-        guard !images.isEmpty, let store = imageStore else { return }
+        guard !artworks.isEmpty else { return }
 
-        for placement in images {
-            guard NSIntersectionRange(placement.range, characterRange).length > 0 else { continue }
-            guard let entry = store.entry(for: placement.source, availableWidth: contentWidth) else { continue }
+        for artwork in artworks {
+            guard NSIntersectionRange(artwork.range, characterRange).length > 0 else { continue }
             guard let anchor = boundingRect(
-                for: NSRange(location: placement.range.location, length: 1),
+                for: NSRange(location: artwork.range.location, length: 1),
                 origin: origin
             ) else { continue }
 
             let target = NSRect(
                 x: anchor.minX,
                 y: anchor.minY + 6,
-                width: entry.displaySize.width,
-                height: entry.displaySize.height
+                width: artwork.size.width,
+                height: artwork.size.height
             )
             NSGraphicsContext.saveGraphicsState()
-            let path = NSBezierPath(roundedRect: target, xRadius: 5, yRadius: 5)
-            path.addClip()
-            entry.image.draw(in: target, from: .zero, operation: .sourceOver, fraction: 1)
+            NSBezierPath(roundedRect: target, xRadius: 5, yRadius: 5).addClip()
+            // Text view coordinates are flipped, so the picture must be told to respect that
+            // or it draws upside down.
+            artwork.image.draw(
+                in: target,
+                from: .zero,
+                operation: .sourceOver,
+                fraction: 1,
+                respectFlipped: true,
+                hints: nil
+            )
             NSGraphicsContext.restoreGraphicsState()
         }
     }
@@ -371,10 +376,9 @@ extension MarkdownLayoutManager: NSLayoutManagerDelegate {
         table(containing: characterIndex)?.target(forDelimiterAt: characterIndex) != nil
     }
 
-    /// The first character of an image's syntax, which stands in for the picture.
+    /// The first character of a picture's syntax, which stands in for the picture itself.
     func isImageAnchor(_ characterIndex: Int) -> Bool {
-        guard let placement = image(startingAt: characterIndex) else { return false }
-        return displaySize(for: placement) != nil
+        artwork(startingAt: characterIndex) != nil
     }
 
     /// Grows the line that holds a picture so the picture has room to be drawn.
@@ -387,11 +391,11 @@ extension MarkdownLayoutManager: NSLayoutManagerDelegate {
         forGlyphRange glyphRange: NSRange
     ) -> Bool {
         let characterRange = layoutManager.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
-        guard let placement = images.first(where: {
+        guard let artwork = artworks.first(where: {
             NSLocationInRange($0.range.location, characterRange)
-        }), let size = displaySize(for: placement) else { return false }
+        }) else { return false }
 
-        let height = size.height + 14
+        let height = artwork.size.height + 14
         lineFragmentRect.pointee.size.height = height
         lineFragmentUsedRect.pointee.size.height = height
         // Sit the text baseline at the bottom of the picture.
@@ -416,11 +420,11 @@ extension MarkdownLayoutManager: NSLayoutManagerDelegate {
         glyphPosition: NSPoint,
         characterIndex: Int
     ) -> NSRect {
-        if let placement = image(startingAt: characterIndex), let size = displaySize(for: placement) {
+        if let artwork = artwork(startingAt: characterIndex) {
             // Only the width comes from here. The line's height is set in
             // shouldSetLineFragmentRect, which is the hook the typesetter honours; returning
             // an oversized control box instead stops the following lines being laid out.
-            return NSRect(x: glyphPosition.x, y: 0, width: size.width, height: proposedRect.height)
+            return NSRect(x: glyphPosition.x, y: 0, width: artwork.size.width, height: proposedRect.height)
         }
         if let table = table(containing: characterIndex) {
             let gap = table.gap(forDelimiterAt: characterIndex, penX: glyphPosition.x)

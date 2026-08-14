@@ -114,7 +114,17 @@ private struct LayoutBuilder {
             addBlock(codeBlock, kind: .codeBlock(language: codeBlock.language))
             let fences = fenceRanges(of: codeBlock)
             addMarkers(fences)
-            highlightCode(codeBlock, fences: fences)
+
+            if let language = codeBlock.language, DiagramLanguage.isDiagram(language),
+               let range = range(of: codeBlock) {
+                layout.diagrams.append(DiagramPlacement(
+                    range: range,
+                    source: codeBlock.code,
+                    language: language.lowercased()
+                ))
+            } else {
+                highlightCode(codeBlock, fences: fences)
+            }
 
         case is ThematicBreak:
             addBlock(markup, kind: .thematicBreak)

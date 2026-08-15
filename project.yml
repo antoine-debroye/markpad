@@ -147,6 +147,11 @@ targets:
           NSExtensionPointIdentifier: com.apple.quicklook.preview
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).PreviewProvider
           NSExtensionAttributes:
+            # PreviewProvider is a QLPreviewProvider, which hands Quick Look rendered data
+            # rather than a view. Without this key the system takes the view-controller path
+            # instead, tries to build a QLPreviewExtensionViewController from the principal
+            # class, and the preview dies before it renders — pressing Space shows nothing.
+            QLIsDataBasedPreview: true
             QLSupportedContentTypes:
               - net.daringfireball.markdown
             QLSupportsSearchableItems: false

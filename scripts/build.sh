@@ -20,7 +20,7 @@ fi
 echo "==> Generating Markpad.xcodeproj"
 xcodegen generate
 
-echo "==> Building ($CONFIGURATION)"
+echo "==> Building ($CONFIGURATION) $(./scripts/version.sh)"
 xcodebuild \
     -project Markpad.xcodeproj \
     -scheme Markpad \

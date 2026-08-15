@@ -25,6 +25,16 @@ To run the app from the Finder, and to make Quick Look and Shortcuts pick it up 
 ./scripts/build.sh release && cp -R dist/Markpad.app /Applications/
 ```
 
+## Versioning
+
+`project.yml` holds both numbers, and the app and the Quick Look extension read the same pair — a nested extension whose version has drifted from its host fails signature validation. Bump them with:
+
+```bash
+./scripts/version.sh patch
+```
+
+`patch`, `minor` and `major` move the marketing version; `set 2.0.0` fixes it outright; `build` leaves it alone and moves the build number only. Every bump also raises the build number, which is never reset — macOS expects it to increase monotonically, and Apple rejects a notarisation that reuses a version, so one ever-rising counter makes reuse impossible. Run `./scripts/version.sh` on its own to print the current version.
+
 ## Testing
 
 ```bash

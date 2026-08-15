@@ -22,7 +22,10 @@ echo "==> Building Release"
 ./scripts/build.sh release
 
 APP="dist/Markpad.app"
-ZIP="dist/Markpad.zip"
+# Versioned to match the disk image, and because Apple rejects a notarisation whose version
+# has already been submitted — a name collision here usually means a forgotten version bump.
+VERSION="$(./scripts/version.sh | awk '{print $1}')"
+ZIP="dist/Markpad-$VERSION.zip"
 
 # The Quick Look extension is signed before the app that contains it: nested code must be
 # sealed first or the outer signature will not validate.

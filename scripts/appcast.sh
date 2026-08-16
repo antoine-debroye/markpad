@@ -100,20 +100,51 @@ if [[ ! -f "$UPDATES/appcast.xml" ]]; then
 fi
 
 echo "==> Building the feed for $VERSION"
-# The enclosure URLs are pinned to this release's tag. Older entries in an existing feed keep
-# the URLs they were written with, so previous releases stay downloadable.
 "$GENERATE_APPCAST" \
     --download-url-prefix "https://github.com/$REPO/releases/download/$TAG/" \
     --link "https://github.com/$REPO" \
     "$UPDATES"
 
+# generate_appcast stamps every entry it writes with this run's prefix, and it rewrites an
+# older entry whenever that version's archive is still lying in the directory — which it has
+# to be, since that is what deltas are computed against. The result is a URL pointing at the
+# wrong release: Markpad-1.1.0.zip under the v1.1.1 tag, which 404s. Each full archive is put
+# back under the tag matching its own version. Deltas belong to this release and stay put.
+python3 - "$UPDATES/appcast.xml" "$REPO" <<'PY'
+import re, sys
+path, repo = sys.argv[1], sys.argv[2]
+xml = open(path).read()
+
+def retag(match):
+    url, version = match.group(0), match.group(1)
+    return re.sub(r"/releases/download/[^/]+/",
+                  f"/releases/download/v{version}/", url)
+
+fixed, n = re.subn(rf"https://github\.com/{re.escape(repo)}/releases/download/[^/\"]+/Markpad-([0-9]+\.[0-9]+\.[0-9]+)\.zip",
+                   retag, xml)
+open(path, "w").write(fixed)
+print(f"==> Pointed {n} archive URL(s) at their own release")
+PY
+
 echo "==> Wrote $UPDATES/appcast.xml"
 echo
-echo "Publish the release, uploading both the archive and the feed:"
+
+# Deltas are listed in the feed, so they have to be uploaded alongside it or Sparkle asks for
+# a file that is not there. It falls back to the full archive, so the update still works — it
+# just silently stops being a few kilobytes instead of a few megabytes.
+DELTAS=$(find "$UPDATES" -maxdepth 1 -name "*.delta" | sort)
+if [[ -n "$DELTAS" ]]; then
+    echo "Deltas built for this release (upload these too, or updates fall back to the full download):"
+    for d in $DELTAS; do echo "    $d  ($(du -h "$d" | cut -f1 | tr -d ' '))"; done
+    echo
+fi
+
+echo "Publish the release:"
 echo
 echo "    gh release create $TAG \\"
 echo "        \"$UPDATES/Markpad-$VERSION.zip\" \\"
 echo "        \"$UPDATES/appcast.xml\" \\"
+for d in $DELTAS; do echo "        \"$d\" \\"; done
 echo "        --repo $REPO --title \"Markpad $VERSION\" --notes \"...\""
 echo
 echo "SUFeedURL reads the feed from the newest release, so it goes live when that is created."

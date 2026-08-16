@@ -83,7 +83,7 @@ targets:
         # The EdDSA public key that updates are verified against; the private half lives in the
         # login keychain. Sparkle refuses to install anything it cannot verify, so an empty key
         # disables updating rather than weakening it. Run ./scripts/appcast.sh setup to fill in.
-        SUPublicEDKey: ""
+        SUPublicEDKey: "Kf1o7p4lWeAt2unbslMM1r3hoD3eeE6EPKzuojQLW0w="
         SUEnableAutomaticChecks: true
         # Downloads and installs without asking, applying the update on next launch, which is
         # the "just keep it current" behaviour. Set to false to prompt before installing.

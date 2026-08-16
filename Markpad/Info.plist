@@ -90,7 +90,7 @@
 	<key>SUFeedURL</key>
 	<string>https://github.com/antoine-debroye/markpad/releases/latest/download/appcast.xml</string>
 	<key>SUPublicEDKey</key>
-	<string></string>
+	<string>Kf1o7p4lWeAt2unbslMM1r3hoD3eeE6EPKzuojQLW0w=</string>
 	<key>SUScheduledCheckInterval</key>
 	<integer>86400</integer>
 	<key>UTImportedTypeDeclarations</key>

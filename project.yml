@@ -140,8 +140,10 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.antoinedebroye.markpad.tests
-        # The editor is exercised directly against AppKit, with no app host: TextKit lays
-        # out text fine in a plain test process, and skipping the host keeps the suite fast.
+        # Depending on the Markpad target gives this suite an app host, so tests run inside the
+        # real app. That means shared singletons are the live ones: never touch
+        # NSDocumentController from a test, or it will read — and clear — the developer's own
+        # recent documents. Test pure logic with synthetic input instead.
         GENERATE_INFOPLIST_FILE: YES
 
   MarkpadQuickLook:
@@ -157,7 +159,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.antoinedebroye.markpad.quicklook
         PRODUCT_NAME: MarkpadQuickLook
         CODE_SIGN_ENTITLEMENTS: MarkpadQuickLook/MarkpadQuickLook.entitlements
-        ENABLE_APP_SANDBOX: NO
+        ENABLE_APP_SANDBOX: YES
         SKIP_INSTALL: YES
     info:
       path: MarkpadQuickLook/Info.plist

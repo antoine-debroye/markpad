@@ -63,6 +63,10 @@ If a `.md` file still previews as plain text after installing, enable Markpad un
 - Remote images (`https://…`) are not downloaded; an editor should not make network requests while you type. Local images render.
 - No LaTeX rendering.
 
+## Licence
+
+[MIT](LICENSE) — copy it, change it, use it at work. Keep the copyright notice, which is all the attribution it asks for.
+
 ---
 
 # Building from source

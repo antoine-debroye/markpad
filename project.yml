@@ -73,7 +73,7 @@ targets:
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSMinimumSystemVersion: $(MACOSX_DEPLOYMENT_TARGET)
         LSApplicationCategoryType: public.app-category.productivity
-        NSHumanReadableCopyright: ""
+        NSHumanReadableCopyright: "© 2026 Antoine Debroye. MIT licensed."
         NSSupportsAutomaticTermination: true
         NSSupportsSuddenTermination: true
         ITSAppUsesNonExemptEncryption: false

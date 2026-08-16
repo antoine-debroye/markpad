@@ -172,11 +172,34 @@ extension MermaidRenderer: WKNavigationDelegate {
         let waiting = pendingLoad
         pendingLoad.removeAll()
         waiting.forEach { $0.resume(throwing: error) }
+        // A failed load leaves the web view in an unusable state; nil it out so the next
+        // render creates a fresh one rather than retrying on a broken page.
+        webView.navigationDelegate = nil
+        self.webView = nil
+        isLoaded = false
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         let waiting = pendingLoad
         pendingLoad.removeAll()
         waiting.forEach { $0.resume(throwing: error) }
+        webView.navigationDelegate = nil
+        self.webView = nil
+        isLoaded = false
+    }
+
+    /// Only local file loads are permitted. The host page and the bundled Mermaid library
+    /// are the only resources the view should ever load; blocking everything else ensures a
+    /// vulnerability in Mermaid cannot trigger an unexpected network request.
+    func webView(
+        _ webView: WKWebView,
+        decidePolicyFor navigationAction: WKNavigationAction,
+        decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+    ) {
+        if navigationAction.request.url?.isFileURL == true {
+            decisionHandler(.allow)
+        } else {
+            decisionHandler(.cancel)
+        }
     }
 }

@@ -17,8 +17,8 @@ packages:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "1.0.0"
-    CURRENT_PROJECT_VERSION: "1"
+    MARKETING_VERSION: "1.0.1"
+    CURRENT_PROJECT_VERSION: "2"
     # Off for local builds, and added back by scripts/notarize.sh, which signs everything with
     # --options runtime. Hardened runtime enforces library validation: a loaded framework must
     # carry the same team identity as the process. Sparkle is a separate framework, and two

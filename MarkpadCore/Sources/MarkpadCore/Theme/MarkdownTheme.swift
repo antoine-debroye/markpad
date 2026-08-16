@@ -91,7 +91,7 @@ public struct MarkdownTheme: Sendable, Equatable {
         bodyFontFamily: String = "-apple-system, BlinkMacSystemFont, \"SF Pro Text\", \"Helvetica Neue\", sans-serif",
         monospaceFontFamily: String = "ui-monospace, \"SF Mono\", Menlo, monospace",
         lineHeight: Double = 1.62,
-        contentWidth: Double = 720
+        contentWidth: Double = 620
     ) {
         self.light = light
         self.dark = dark

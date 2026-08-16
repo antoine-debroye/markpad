@@ -33,6 +33,7 @@ struct EditorTheme {
     var quoteText: NSColor { dynamic(\.quoteText, "quoteText") }
     var rule: NSColor { dynamic(\.rule, "rule") }
     var tableBorder: NSColor { dynamic(\.tableBorder, "tableBorder") }
+    var tableHeaderBackground: NSColor { dynamic(\.tableHeaderBackground, "tableHeaderBackground") }
     var syntaxMarker: NSColor { dynamic(\.syntaxMarker, "syntaxMarker") }
 
     /// Colour for a code token.

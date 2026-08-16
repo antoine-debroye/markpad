@@ -7,8 +7,8 @@ import MarkpadCore
 /// control glyph whose width is exactly the distance to the next column, so the cells after
 /// it start on a shared boundary. This type works out those distances.
 struct TableGeometry {
-    /// Space either side of a cell's text.
-    static let cellPadding: CGFloat = 10
+    /// Space either side of a cell's text. From the design's `padding: 8px 12px`.
+    static let cellPadding: CGFloat = MarkdownStyler.Table.horizontalPadding
     /// Smallest gap a delimiter may collapse to when a cell overruns its column.
     private static let minimumGap: CGFloat = 6
 
@@ -43,7 +43,18 @@ struct TableGeometry {
     /// A table that nearly fits is shrunk slightly to avoid a scroll bar; one that cannot
     /// fit keeps its natural size and is reached by scrolling, which beats clipping it or
     /// squeezing the text until it is unreadable.
-    init(structure: TableStructure, storage: NSTextStorage, availableWidth: CGFloat, theme: EditorTheme) {
+    /// - Parameters:
+    ///   - availableWidth: how wide the table may grow before it has to be scrolled to.
+    ///   - stretchWidth: the text column's width. A table narrower than this is stretched to
+    ///     fill it, because the design lays tables out as a grid spanning the measure rather
+    ///     than shrink-wrapped around their contents.
+    init(
+        structure: TableStructure,
+        storage: NSTextStorage,
+        availableWidth: CGFloat,
+        stretchWidth: CGFloat,
+        theme: EditorTheme
+    ) {
         self.structure = structure
 
         let candidates: [CGFloat] = [1.0, 0.94, 0.88]
@@ -61,8 +72,17 @@ struct TableGeometry {
         self.fitsAvailableWidth = chosen != nil
         self.scale = resolved.scale
 
+        // Spread any slack across the columns in proportion to their measured width, so the
+        // table meets both edges of the text column like the design's `1.4fr 1fr 1fr` grid.
+        var widths = resolved.widths
+        let natural = widths.reduce(0, +)
+        if natural > 0, stretchWidth > natural {
+            let factor = stretchWidth / natural
+            widths = widths.map { $0 * factor }
+        }
+
         var boundaries: [CGFloat] = [0]
-        for width in resolved.widths {
+        for width in widths {
             let next = (boundaries.last ?? 0) + width
             boundaries.append(min(next, Self.maximumWidth))
         }

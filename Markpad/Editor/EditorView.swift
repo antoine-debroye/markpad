@@ -46,7 +46,12 @@ struct EditorView: NSViewRepresentable {
         textView.isIncrementalSearchingEnabled = true
         textView.backgroundColor = theme.background
         textView.insertionPointColor = theme.text
-        textView.textContainerInset = CGSize(width: 24, height: 28)
+        // Starting value only; the first styling pass centres the column once the scroll view
+        // has a real width.
+        textView.textContainerInset = CGSize(
+            width: EditorMetrics.gutter,
+            height: EditorMetrics.verticalInset
+        )
         textView.autoresizingMask = [.width]
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false
@@ -63,7 +68,10 @@ struct EditorView: NSViewRepresentable {
         textView.onAppearanceChange = { [weak coordinator] in
             textView.backgroundColor = theme.background
             textView.insertionPointColor = theme.text
-            coordinator?.restyle(force: true)
+            // Deferred for the same reason as the width observers: this fires from
+            // `viewDidChangeEffectiveAppearance`, which runs inside the display cycle, and a
+            // restyle resizes the text container — invalidating constraints mid-pass throws.
+            DispatchQueue.main.async { coordinator?.restyle(force: true) }
         }
         textView.onLinkActivated = { destination in
             guard let url = URL(string: destination), url.scheme != nil else { return }
@@ -80,13 +88,7 @@ struct EditorView: NSViewRepresentable {
         DispatchQueue.main.async { coordinator.restyle(force: true) }
 
         textView.postsFrameChangedNotifications = true
-        NotificationCenter.default.addObserver(
-            forName: NSView.frameDidChangeNotification,
-            object: textView,
-            queue: .main
-        ) { [weak coordinator] _ in
-            coordinator?.reflowTables()
-        }
+        coordinator.observe(NSView.frameDidChangeNotification, from: textView)
 
         let scrollView = NSScrollView()
         scrollView.documentView = textView
@@ -94,7 +96,16 @@ struct EditorView: NSViewRepresentable {
         scrollView.drawsBackground = true
         scrollView.backgroundColor = theme.background
         scrollView.automaticallyAdjustsContentInsets = true
+        // A second observer, because a wide table switches the text view's autoresizing mask to
+        // height-only: its width then stops following the window, and resizing would fire
+        // nothing at all through the observer above.
+        scrollView.postsFrameChangedNotifications = true
+        coordinator.observe(NSView.frameDidChangeNotification, from: scrollView)
         return scrollView
+    }
+
+    static func dismantleNSView(_ scrollView: NSScrollView, coordinator: EditorCoordinator) {
+        coordinator.stopObserving()
     }
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
@@ -122,12 +133,35 @@ struct EditorView: NSViewRepresentable {
     }
 }
 
-/// Live document statistics shown in the toolbar.
+/// Live document statistics shown in the window chrome.
 struct EditorStatus: Equatable {
     var words: Int = 0
     var characters: Int = 0
     /// Headings in document order, for the outline sidebar.
     var outline: [OutlineItem] = []
+
+    /// Words per minute used for the reading estimate.
+    ///
+    /// 200 is the figure the design was drawn against — its "1,204 words · 6 min" only holds at
+    /// this rate.
+    static let wordsPerMinute = 200
+
+    /// Minutes to read, never less than one for a document with any words in it.
+    var readingMinutes: Int {
+        guard words > 0 else { return 0 }
+        return max(1, Int((Double(words) / Double(Self.wordsPerMinute)).rounded()))
+    }
+
+    /// "412 words", as the light chrome shows it.
+    var wordsDescription: String {
+        words == 1 ? "1 word" : "\(words.formatted(.number)) words"
+    }
+
+    /// "1,204 words · 6 min", as the dark chrome's floating pill shows it.
+    var readingDescription: String {
+        guard words > 0 else { return "No words yet" }
+        return "\(wordsDescription) · \(readingMinutes) min"
+    }
 }
 
 struct OutlineItem: Equatable, Identifiable {
@@ -158,6 +192,12 @@ final class EditorCoordinator: NSObject, NSTextViewDelegate, NSTextStorageDelega
     private var restyleWorkItem: DispatchWorkItem?
     /// Guards against re-entrancy while the styler writes attributes.
     private var isStyling = false
+    /// Notification registrations, kept so they can be removed when the editor goes away.
+    private var observers: [NSObjectProtocol] = []
+    /// Coalesces a burst of frame-change notifications into one deferred re-layout.
+    private var hasPendingWidthReflow = false
+    /// Width the editor was last laid out for, so an unchanged width does no work.
+    private var lastReflowWidth: CGFloat = -1
     /// Width prose wraps at when the container has been widened for a table. Nil when the
     /// container matches the window, which is the usual case.
     private var wrapWidth: CGFloat?
@@ -200,6 +240,11 @@ final class EditorCoordinator: NSObject, NSTextViewDelegate, NSTextStorageDelega
         layout = engine.layout(for: textView.string)
         activeRanges = layout.activeBlockRanges(for: textView.selectedRange())
 
+        // Before anything reads a width: `buildTableGeometry` below measures against the inset,
+        // and `applyContentWidth` runs too late to correct it — its second styling pass only
+        // fires when `wrapWidth` happens to change, which it usually does not.
+        applyMeasureInset()
+
         styler.apply(layout: layout, to: storage, activeRanges: activeRanges)
         buildTableGeometry()
 
@@ -230,7 +275,8 @@ final class EditorCoordinator: NSObject, NSTextViewDelegate, NSTextStorageDelega
             imageStore.prepare(placement.source)
         }
 
-        let width = visibleWidth
+        // Pictures fit the text column rather than the window, so they sit with the prose.
+        let width = measureWidth
         layoutManager.contentWidth = width
 
         let isDark = textView.effectiveAppearance
@@ -282,13 +328,11 @@ final class EditorCoordinator: NSObject, NSTextViewDelegate, NSTextStorageDelega
 
     /// Re-runs image placement after one finishes loading or the window resizes.
     private func reflowImages() {
-        guard let textView, let layoutManager, let storage = textView.textStorage, !isStyling else { return }
+        guard !isStyling else { return }
         isStyling = true
         prepareImages()
         isStyling = false
         applyConcealment()
-        _ = layoutManager
-        _ = storage
     }
 
     /// Re-measures tables after a resize. Column widths depend on the window, and a table
@@ -301,16 +345,27 @@ final class EditorCoordinator: NSObject, NSTextViewDelegate, NSTextStorageDelega
         applyConcealment()
     }
 
+    /// Re-lays out after the window changes width.
+    ///
+    /// Deliberately not `reflowTables()`, which returns immediately when the document has no
+    /// tables — a plain prose document would then never re-centre. Pictures were also never
+    /// re-fitted on resize, which this fixes on the way past.
+    func reflowForWidthChange() {
+        guard !isStyling else { return }
+        isStyling = true
+        applyContentWidth()
+        if !layout.tables.isEmpty { buildTableGeometry() }
+        if !layout.images.isEmpty || !layout.diagrams.isEmpty { prepareImages() }
+        isStyling = false
+        applyConcealment()
+    }
+
     /// Measures each table that should be drawn as a grid.
     ///
     /// A table the caret is inside stays as raw source so it can be edited, and one too wide
     /// for the window is left as aligned text rather than drawn as a broken grid.
     private func buildTableGeometry() {
         guard let textView, let layoutManager, let storage = textView.textStorage else { return }
-        // The container already excludes the view's inset when it tracks the view's width.
-        let available = textView.textContainer?.size.width
-            ?? (textView.bounds.width - textView.textContainerInset.width * 2)
-
         let styler = self.styler
         var geometries: [TableGeometry] = []
 
@@ -318,24 +373,58 @@ final class EditorCoordinator: NSObject, NSTextViewDelegate, NSTextStorageDelega
             let isActive = activeRanges.contains { NSIntersectionRange($0, structure.range).length > 0 }
             guard !isActive else { continue }
 
+            // Measured against the window, not the text column. Measuring against the column
+            // would push every table between the measure and the window width down the
+            // shrink-to-fit ladder, quietly reducing table font size on wide windows.
             let geometry = TableGeometry(
                 structure: structure,
                 storage: storage,
-                availableWidth: max(visibleWidth, 120),
+                availableWidth: availableWidth,
+                stretchWidth: measureWidth,
                 theme: theme
             )
             styler.applyTable(structure, scale: geometry.scale, to: storage)
             geometries.append(geometry)
         }
         layoutManager.tables = geometries
-        _ = available
     }
 
-    /// Width of the editor's visible text area, ignoring any horizontal overflow.
-    private var visibleWidth: CGFloat {
+    /// Width of the window's text area, before the centring margin is taken out.
+    ///
+    /// Deliberately derived from the scroll view rather than from `textContainerInset`: the inset
+    /// is computed *from* this, so reading it back here would make the two define each other and
+    /// the layout would never settle.
+    private var availableWidth: CGFloat {
         guard let textView else { return 600 }
         let scrollWidth = textView.enclosingScrollView?.contentSize.width ?? textView.bounds.width
-        return max(scrollWidth - textView.textContainerInset.width * 2, 120)
+        return max(scrollWidth - EditorMetrics.gutter * 2, EditorMetrics.minimumMeasure)
+    }
+
+    /// Width prose, pictures and diagrams are laid out at.
+    private var measureWidth: CGFloat {
+        min(theme.contentWidth, availableWidth)
+    }
+
+    /// Centres the text column by adjusting the container inset.
+    ///
+    /// Called before anything reads a width, from both `restyle()` and the resize path.
+    @discardableResult
+    private func applyMeasureInset() -> EditorMetrics {
+        let frameWidth = textView?.enclosingScrollView?.contentSize.width ?? 0
+        let widest = layoutManager?.tables.map(\.width).max() ?? 0
+        let metrics = EditorMetrics(
+            frameWidth: frameWidth,
+            contentWidth: theme.contentWidth,
+            widestTable: widest
+        )
+
+        if let textView, abs(textView.textContainerInset.width - metrics.horizontalInset) > 0.5 {
+            textView.textContainerInset = CGSize(
+                width: metrics.horizontalInset,
+                height: EditorMetrics.verticalInset
+            )
+        }
+        return metrics
     }
 
     /// Widens the text container when a table overflows, so it can be reached by scrolling
@@ -346,33 +435,48 @@ final class EditorCoordinator: NSObject, NSTextViewDelegate, NSTextStorageDelega
               let container = textView.textContainer,
               let scrollView = textView.enclosingScrollView else { return }
 
-        let visible = visibleWidth
-        let widest = layoutManager?.tables.filter { !$0.fitsAvailableWidth }.map(\.width).max() ?? 0
-        let needed = max(widest, visible)
-        let overflows = needed > visible + 1
+        let metrics = applyMeasureInset()
 
-        wrapWidth = overflows ? visible : nil
-        scrollView.hasHorizontalScroller = overflows
+        wrapWidth = metrics.wrapWidth
+        scrollView.hasHorizontalScroller = metrics.overflows
 
-        if overflows {
+        if metrics.overflows {
             container.widthTracksTextView = false
-            container.size = CGSize(width: needed, height: CGFloat.greatestFiniteMagnitude)
+            setContainerWidth(metrics.containerWidth, on: container)
             textView.isHorizontallyResizable = true
             textView.autoresizingMask = [.height]
-            textView.minSize = CGSize(width: needed, height: 0)
-            var frame = textView.frame
-            frame.size.width = needed + textView.textContainerInset.width * 2
-            textView.frame = frame
-        } else if !container.widthTracksTextView {
-            container.widthTracksTextView = true
-            textView.isHorizontallyResizable = false
-            textView.autoresizingMask = [.width]
-            textView.minSize = CGSize(width: 0, height: 0)
-            var frame = textView.frame
-            frame.size.width = scrollView.contentSize.width
-            textView.frame = frame
-            container.size = CGSize(width: visible, height: CGFloat.greatestFiniteMagnitude)
+            textView.minSize = CGSize(width: metrics.documentWidth, height: 0)
+            setFrameWidth(metrics.documentWidth, on: textView)
+        } else {
+            if !container.widthTracksTextView {
+                container.widthTracksTextView = true
+                textView.isHorizontallyResizable = false
+                textView.autoresizingMask = [.width]
+                textView.minSize = CGSize(width: 0, height: 0)
+            }
+            // The text view keeps filling the scroll view, so the background reaches both edges;
+            // only the container inside it narrows.
+            setFrameWidth(scrollView.contentSize.width, on: textView)
+            setContainerWidth(metrics.containerWidth, on: container)
         }
+    }
+
+    /// Resizes the text view only when the width actually changes.
+    ///
+    /// This is what stops the width logic spinning. Setting the frame posts
+    /// `frameDidChangeNotification`, which is the notification that calls back into
+    /// `reflowForWidthChange()` — so an unconditional write re-triggers itself forever. A
+    /// document with a table wide enough to take the overflow branch pinned the app at 100% CPU.
+    private func setFrameWidth(_ width: CGFloat, on textView: NSTextView) {
+        guard abs(textView.frame.width - width) > 0.5 else { return }
+        var frame = textView.frame
+        frame.size.width = width
+        textView.frame = frame
+    }
+
+    private func setContainerWidth(_ width: CGFloat, on container: NSTextContainer) {
+        guard abs(container.size.width - width) > 0.5 else { return }
+        container.size = CGSize(width: width, height: CGFloat.greatestFiniteMagnitude)
     }
 
     /// Recomputes which markers are collapsed and repaints the affected paragraphs.
@@ -438,10 +542,63 @@ final class EditorCoordinator: NSObject, NSTextViewDelegate, NSTextStorageDelega
 
     // MARK: Commands
 
+    /// Watches `name` on `object` and re-lays out when the width changes.
+    func observe(_ name: Notification.Name, from object: AnyObject) {
+        observers.append(NotificationCenter.default.addObserver(
+            forName: name,
+            object: object,
+            queue: .main
+        ) { [weak self] _ in
+            self?.scheduleWidthReflow()
+        })
+    }
+
+    /// Re-lays out for a new width on the next runloop pass.
+    ///
+    /// Never synchronously: a notification delivered to `.main` while already on the main
+    /// thread runs inline, and these frame changes arrive *during* the window's constraints
+    /// pass. Resizing the text view from inside that pass invalidates constraints while AppKit
+    /// is updating them, which throws — the app crashed at launch on
+    /// `_postWindowNeedsUpdateConstraints`. Deferring also coalesces the burst of notifications
+    /// a single resize produces into one pass.
+    private func scheduleWidthReflow() {
+        guard !hasPendingWidthReflow else { return }
+        hasPendingWidthReflow = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.hasPendingWidthReflow = false
+
+            // Only act on an actual change of width. Re-laying out itself invalidates layout
+            // and posts more frame-change notifications; deferring them past the `isStyling`
+            // re-entrancy guard means each one would start another pass, which spins the app at
+            // 100% CPU. Comparing the width is what terminates the cycle.
+            let width = self.textView?.enclosingScrollView?.contentSize.width ?? 0
+            guard abs(width - self.lastReflowWidth) > 0.5 else { return }
+            self.lastReflowWidth = width
+            self.reflowForWidthChange()
+        }
+    }
+
+    /// Drops every registration. Without this each closed document left its observers behind:
+    /// they no-op, because they hold the coordinator weakly and check for the key window, but
+    /// they accumulate for the lifetime of the process.
+    func stopObserving() {
+        for observer in observers {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        observers.removeAll()
+    }
+
+    deinit {
+        for observer in observers {
+            NotificationCenter.default.removeObserver(observer)
+        }
+    }
+
     /// Menu commands reach the focused editor through notifications, which keeps the text
     /// view out of SwiftUI's state graph.
     func observeCommands() {
-        NotificationCenter.default.addObserver(
+        observers.append(NotificationCenter.default.addObserver(
             forName: .markpadFormatting,
             object: nil,
             queue: .main
@@ -455,9 +612,9 @@ final class EditorCoordinator: NSObject, NSTextViewDelegate, NSTextStorageDelega
             }
             self.text = textView.string
             self.restyle(force: true)
-        }
+        })
 
-        NotificationCenter.default.addObserver(
+        observers.append(NotificationCenter.default.addObserver(
             forName: .markpadScrollToLocation,
             object: nil,
             queue: .main
@@ -467,7 +624,7 @@ final class EditorCoordinator: NSObject, NSTextViewDelegate, NSTextStorageDelega
             let target = NSRange(location: min(location, (textView.string as NSString).length), length: 0)
             textView.setSelectedRange(target)
             textView.scrollRangeToVisible(target)
-        }
+        })
     }
 
     // MARK: Actions

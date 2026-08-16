@@ -110,53 +110,65 @@ final class MarkdownLayoutManager: NSLayoutManager {
         }
         guard let first = rowRects.first, let last = rowRects.last else { return }
 
-        let left = origin.x + (first.rect.minX - first.rect.minX)
+        // Rows now carry their own padding, so the grid can sit exactly on the row rects
+        // instead of the ±2 fudges that used to stand in for it.
         let frame = NSRect(
             x: origin.x,
             y: first.rect.minY,
             width: table.width,
             height: last.rect.maxY - first.rect.minY
-        ).insetBy(dx: 0, dy: -2)
-        _ = left
+        )
 
-        // Header band.
+        let radius = MarkdownStyler.Table.cornerRadius
+        let outline = NSRect(
+            x: frame.minX + 0.5,
+            y: frame.minY.rounded() + 0.5,
+            width: table.width,
+            height: frame.height
+        )
+        let clip = NSBezierPath(roundedRect: outline, xRadius: radius, yRadius: radius)
+
+        // Header band, clipped to the rounded outline so its top corners follow it.
         if first.isHeader {
-            context.setFillColor(theme.codeBackground.cgColor)
-            let header = NSRect(
+            // The dedicated token, not the code background it used to borrow.
+            context.setFillColor(theme.tableHeaderBackground.cgColor)
+            context.saveGState()
+            clip.addClip()
+            context.fill(NSRect(
                 x: frame.minX,
-                y: first.rect.minY - 2,
+                y: first.rect.minY,
                 width: table.width,
-                height: first.rect.height + 4
-            )
-            context.fill(header)
+                height: first.rect.height
+            ))
+            context.restoreGState()
         }
 
         context.setStrokeColor(theme.tableBorder.cgColor)
         context.setLineWidth(1)
 
-        // Horizontal rules between rows.
+        // Horizontal rules between rows, on the row boundary itself.
         for (index, entry) in rowRects.enumerated() where index > 0 {
-            let y = (entry.rect.minY - 2).rounded() + 0.5
+            let y = entry.rect.minY.rounded() + 0.5
             context.move(to: CGPoint(x: frame.minX, y: y))
             context.addLine(to: CGPoint(x: frame.minX + table.width, y: y))
         }
 
-        // Column separators.
-        for boundary in table.boundaries {
+        // Column separators — inner boundaries only. The first and last coincide with the
+        // outer border, and drawing a square line there cut across the rounded corners and
+        // left a nub of background trapped inside the arc.
+        for boundary in table.boundaries.dropFirst().dropLast() {
             let x = (frame.minX + boundary).rounded() + 0.5
-            context.move(to: CGPoint(x: x, y: frame.minY - 2))
+            context.move(to: CGPoint(x: x, y: frame.minY))
             context.addLine(to: CGPoint(x: x, y: frame.maxY))
         }
 
-        // The outer frame joins the same path: stroking a rect directly would discard the
-        // rules accumulated above.
-        context.addRect(NSRect(
-            x: frame.minX + 0.5,
-            y: (frame.minY - 2).rounded() + 0.5,
-            width: table.width,
-            height: frame.height
-        ))
+        // Rules and separators stroke first; the rounded outline is a separate path because a
+        // rounded rect cannot share a path with the straight lines above without joining them.
         context.strokePath()
+
+        context.setStrokeColor(theme.tableBorder.cgColor)
+        context.setLineWidth(1)
+        clip.stroke()
     }
 
     private func boundingRect(for range: NSRange, origin: NSPoint) -> NSRect? {
@@ -177,10 +189,23 @@ final class MarkdownLayoutManager: NSLayoutManager {
         return NSRange(location: location, length: min(range.length, length - location))
     }
 
+    /// Width decorations span: the text column, not the container.
+    ///
+    /// A table wider than the column widens the container to hold it. Sizing a code panel or a
+    /// rule from the container would then make it stretch past the prose it belongs to.
+    private var decorationWidth: CGFloat {
+        let container = textContainers.first?.size.width ?? contentWidth
+        return min(container, contentWidth)
+    }
+
     private func drawCodeBackground(for block: BlockRun, origin: NSPoint, context: CGContext) {
         guard var rect = boundingRect(for: block.range, origin: origin) else { return }
         rect = rect.insetBy(dx: -8, dy: -4)
-        rect.size.width = max(rect.width, (textContainers.first?.size.width ?? rect.width) - 16)
+        // Assigned, not `max`ed with the measured rect: `boundingRect(forGlyphRange:)` reports
+        // line *fragment* rects, which span the whole container. Taking the larger of the two
+        // would let the panel stretch across a container that a wide table had widened, instead
+        // of spanning the text column the code actually sits in.
+        rect.size.width = decorationWidth - 16
         let path = NSBezierPath(roundedRect: rect, xRadius: 6, yRadius: 6)
         context.setFillColor(theme.codeBackground.cgColor)
         path.fill()
@@ -189,7 +214,7 @@ final class MarkdownLayoutManager: NSLayoutManager {
     private func drawThematicBreak(for block: BlockRun, origin: NSPoint, context: CGContext) {
         guard let rect = boundingRect(for: block.range, origin: origin) else { return }
         let y = rect.midY.rounded()
-        let width = (textContainers.first?.size.width ?? rect.width) - 8
+        let width = decorationWidth - 8
         context.setStrokeColor(theme.rule.cgColor)
         context.setLineWidth(1)
         context.move(to: CGPoint(x: origin.x + 4, y: y))
@@ -201,9 +226,21 @@ final class MarkdownLayoutManager: NSLayoutManager {
         guard let rect = boundingRect(for: block.range, origin: origin) else { return }
         context.setFillColor(theme.quoteBar.cgColor)
         for depth in 0..<block.quoteDepth {
-            let x = origin.x + 4 + CGFloat(depth) * 10
-            let bar = CGRect(x: x, y: rect.minY - 2, width: 3, height: rect.height + 4)
-            context.fill(bar)
+            // Each bar sits at the left edge of the indent its own level introduced, so the
+            // text — indented by the same step in `MarkdownStyler` — clears it.
+            let x = origin.x + CGFloat(depth) * MarkdownStyler.QuoteBar.indent
+            let bar = CGRect(
+                x: x,
+                y: rect.minY - 2,
+                width: MarkdownStyler.QuoteBar.width,
+                height: rect.height + 4
+            )
+            let path = NSBezierPath(
+                roundedRect: bar,
+                xRadius: MarkdownStyler.QuoteBar.cornerRadius,
+                yRadius: MarkdownStyler.QuoteBar.cornerRadius
+            )
+            path.fill()
         }
     }
 
@@ -286,7 +323,8 @@ final class MarkdownLayoutManager: NSLayoutManager {
     }
 
     private func drawCheckbox(in rect: NSRect, checked: Bool) {
-        let side = theme.baseFontSize * 0.82
+        // The design draws a 16px box on a 16px body font, so the box matches the text size.
+        let side = theme.baseFontSize
         let box = NSRect(
             x: rect.minX + 1,
             y: rect.midY - side / 2 + theme.baseFontSize * 0.05,
@@ -381,7 +419,7 @@ extension MarkdownLayoutManager: NSLayoutManagerDelegate {
         artwork(startingAt: characterIndex) != nil
     }
 
-    /// Grows the line that holds a picture so the picture has room to be drawn.
+    /// Grows the line that holds a picture, or pads a table row.
     func layoutManager(
         _ layoutManager: NSLayoutManager,
         shouldSetLineFragmentRect lineFragmentRect: UnsafeMutablePointer<NSRect>,
@@ -391,16 +429,41 @@ extension MarkdownLayoutManager: NSLayoutManagerDelegate {
         forGlyphRange glyphRange: NSRange
     ) -> Bool {
         let characterRange = layoutManager.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
-        guard let artwork = artworks.first(where: {
-            NSLocationInRange($0.range.location, characterRange)
-        }) else { return false }
 
-        let height = artwork.size.height + 14
-        lineFragmentRect.pointee.size.height = height
-        lineFragmentUsedRect.pointee.size.height = height
-        // Sit the text baseline at the bottom of the picture.
-        baselineOffset.pointee = height - 4
-        return true
+        if let artwork = artworks.first(where: {
+            NSLocationInRange($0.range.location, characterRange)
+        }) {
+            let height = artwork.size.height + 14
+            lineFragmentRect.pointee.size.height = height
+            lineFragmentUsedRect.pointee.size.height = height
+            // Sit the text baseline at the bottom of the picture.
+            baselineOffset.pointee = height - 4
+            return true
+        }
+
+        // Table rows are padded here rather than through paragraph attributes. This is the only
+        // hook that grows the line *and* moves the baseline independently, so the text ends up
+        // centred and the padding lands inside the line's bounding rect — which is what the
+        // header band and the row rules are measured from. Paragraph spacing sits outside that
+        // rect, so the band stopped short of the rule and left a seam.
+        if isTableRow(characterRange) {
+            let padding = MarkdownStyler.Table.verticalPadding
+            lineFragmentRect.pointee.size.height += padding * 2
+            lineFragmentUsedRect.pointee.size.height += padding * 2
+            baselineOffset.pointee += padding
+            return true
+        }
+
+        return false
+    }
+
+    /// Whether these characters belong to a row of a table currently drawn as a grid.
+    private func isTableRow(_ characterRange: NSRange) -> Bool {
+        tables.contains { table in
+            table.structure.rows.contains { row in
+                NSIntersectionRange(row.range, characterRange).length > 0
+            }
+        }
     }
 
     func layoutManager(

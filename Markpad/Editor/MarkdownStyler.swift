@@ -27,13 +27,16 @@ struct MarkdownStyler {
             let range = clamp(row.range, in: storage)
             guard range.length > 0 else { continue }
 
+            let size = theme.baseFontSize * scale * Table.fontScale
+
             let style = NSMutableParagraphStyle()
+            // Cell padding is applied by the layout manager, which can grow the line and shift
+            // its baseline together; paragraph attributes can only do one or the other.
             style.lineHeightMultiple = 1.0
             style.paragraphSpacing = 0
             style.lineBreakMode = .byClipping
             storage.addAttribute(.paragraphStyle, value: style, range: range)
 
-            let size = theme.baseFontSize * scale * 0.96
             let font = NSFont.systemFont(ofSize: size, weight: row.isHeader ? .semibold : .regular)
             storage.addAttributes([
                 .font: font,
@@ -55,6 +58,27 @@ struct MarkdownStyler {
                 .paragraphStyle: style
             ], range: range)
         }
+    }
+
+    /// Table grid metrics, from the design's cell CSS (`padding: 8px 12px`, `font-size: 14px`,
+    /// `border-radius: 6px`). Shared with the layout manager, which draws the grid.
+    enum Table {
+        /// Cell text size, relative to the body measure.
+        static let fontScale: CGFloat = 0.875
+        static let horizontalPadding: CGFloat = 12
+        static let verticalPadding: CGFloat = 8
+        static let cornerRadius: CGFloat = 6
+    }
+
+    /// Geometry of a block quote's bar, shared by the styler and the layout manager so the text
+    /// indent and the drawn bar cannot drift apart. Values come from the design.
+    enum QuoteBar {
+        static let width: CGFloat = 4
+        static let cornerRadius: CGFloat = 2
+        /// Gap between the bar and the quoted text.
+        static let gap: CGFloat = 14
+        /// How far each level of quoting moves the text right.
+        static var indent: CGFloat { width + gap }
     }
 
     func apply(layout: MarkdownLayout, to storage: NSTextStorage, activeRanges: [NSRange]) {
@@ -94,7 +118,17 @@ struct MarkdownStyler {
         let range = clamp(block.range, in: storage)
         guard range.length > 0 else { return }
 
-        storage.addAttribute(.paragraphStyle, value: paragraphStyle(for: block), range: range)
+        // A quoted paragraph's cmark range starts after the "> " prefix, but TextKit reads a
+        // paragraph's style from its FIRST character — the ">" — which only ever had the
+        // default style. The quote indent therefore never rendered and the quote bar drew on
+        // top of the text. Styling the whole paragraph puts the style where TextKit looks.
+        //
+        // Deliberately scoped to quotes: the same mechanism leaves list indents inert, and that
+        // accident matches the design, which draws top-level list items flush with body text.
+        let styleRange = block.quoteDepth > 0
+            ? (storage.string as NSString).paragraphRange(for: range)
+            : range
+        storage.addAttribute(.paragraphStyle, value: paragraphStyle(for: block), range: styleRange)
 
         switch block.kind {
         case .heading(let level):
@@ -142,7 +176,7 @@ struct MarkdownStyler {
 
         guard let block else { return style }
 
-        let quoteInset = CGFloat(block.quoteDepth) * (theme.indentStep * 0.75)
+        let quoteInset = CGFloat(block.quoteDepth) * QuoteBar.indent
         let listInset = CGFloat(block.listDepth) * theme.indentStep
         style.firstLineHeadIndent = quoteInset + listInset
         style.headIndent = quoteInset + listInset
@@ -229,6 +263,14 @@ struct MarkdownStyler {
                 value: isActive ? theme.secondaryText : NSColor.clear,
                 range: range
             )
+
+            // A checkbox keeps the width of the characters underneath it, and in the body font
+            // "[x]" is wider than "[ ]" — which pushed a ticked row's label further right than
+            // its neighbours'. A monospaced font gives both the same advance, so the labels of
+            // a task list line up regardless of which items are done.
+            if case .checkbox = marker.presentation, !isActive {
+                storage.addAttribute(.font, value: theme.monospaceFont, range: range)
+            }
         }
     }
 

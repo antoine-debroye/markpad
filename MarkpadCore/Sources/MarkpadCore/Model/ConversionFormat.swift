@@ -78,9 +78,14 @@ public enum ConversionError: LocalizedError, Sendable {
     case unreadableFile(URL)
     case noTextFound(URL)
     case exportFailed(String)
+    /// The caller asked for the conversion to stop. Not a failure: callers that present errors
+    /// should filter this case rather than showing it, since the user already knows.
+    case cancelled
 
     public var errorDescription: String? {
         switch self {
+        case .cancelled:
+            return "The conversion was cancelled."
         case .unsupportedInput(let url):
             return "Markpad can't read \(url.lastPathComponent). Supported inputs are Markdown, PDF and image files."
         case .unsupportedConversion(let input, let format):

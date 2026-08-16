@@ -29,22 +29,45 @@ public struct PDFImporter: Sendable {
 
     public init() {}
 
-    public func convert(url: URL, options: Options = Options()) throws -> String {
+    public func convert(
+        url: URL,
+        options: Options = Options(),
+        progress: ImportProgress.Handler? = nil,
+        isCancelled: @escaping @Sendable () -> Bool = { false }
+    ) throws -> String {
         guard let document = PDFDocument(url: url) else {
             throw ConversionError.unreadableFile(url)
         }
 
+        let reporter = ImportReporter(
+            totalUnits: max(document.pageCount, 1),
+            handler: progress,
+            isCancelled: isCancelled
+        )
+        reporter.report(.reading, index: 0)
+
         var pages: [[TextBlockAssembler.Line]] = []
         for index in 0..<document.pageCount {
+            try reporter.checkCancellation()
             guard let page = document.page(at: index) else { continue }
             var lines = textLayerLines(of: page)
 
             let hasText = lines.contains { !$0.text.trimmingCharacters(in: .whitespaces).isEmpty }
+            // Reported before the slow step, so the label describes what is about to happen.
+            reporter.report(hasText ? .extractingText : .recognizingText, index: index)
+
             if !hasText, options.performOCRWhenNeeded, let image = render(page: page) {
+                // Rasterising is itself slow, so this catches a cancel that arrived during it.
+                // The check must stay outside the `try?` below, which would swallow the error
+                // and leave the page silently blank.
+                try reporter.checkCancellation()
                 lines = (try? ImageImporter().recognizeLines(in: image, options: .init())) ?? []
             }
             pages.append(lines)
         }
+
+        try reporter.checkCancellation()
+        reporter.reportAssembling()
 
         var allLines = options.stripRepeatingHeadersAndFooters
             ? removingRunningHeads(from: pages)
@@ -60,6 +83,7 @@ public struct PDFImporter: Sendable {
         guard !markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw ConversionError.noTextFound(url)
         }
+        reporter.reportFinished()
         return markdown
     }
 

@@ -67,7 +67,9 @@ struct ConvertFileIntent: AppIntent {
 
         for file in files {
             let url = try resolveURL(for: file)
-            let result = try service.convert(fileAt: url, to: format.conversionFormat)
+            // Awaited rather than called synchronously: recognising a scanned PDF takes seconds,
+            // and `perform` runs on the main actor.
+            let result = try await service.importFile(at: url, to: format.conversionFormat)
             var output = IntentFile(
                 data: result.data,
                 filename: result.suggestedFilename,
@@ -91,7 +93,7 @@ struct ConvertFileIntent: AppIntent {
             .appendingPathComponent("IntentInputs", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
-        let name = file.filename.isEmpty ? "input" : file.filename
+        let name = file.filename.isEmpty ? "input" : URL(fileURLWithPath: file.filename).lastPathComponent
         let staged = directory.appendingPathComponent(name)
         try file.data.write(to: staged, options: .atomic)
         return staged
@@ -172,10 +174,12 @@ struct ExtractMarkdownIntent: AppIntent {
             let directory = FileManager.default.temporaryDirectory
                 .appendingPathComponent("IntentInputs", isDirectory: true)
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            url = directory.appendingPathComponent(file.filename.isEmpty ? "input" : file.filename)
+            url = directory.appendingPathComponent(
+                URL(fileURLWithPath: file.filename.isEmpty ? "input" : file.filename).lastPathComponent
+            )
             try file.data.write(to: url, options: .atomic)
         }
-        return .result(value: try ConversionService().markdown(fromFileAt: url))
+        return .result(value: try await ConversionService().importMarkdown(fromFileAt: url))
     }
 }
 

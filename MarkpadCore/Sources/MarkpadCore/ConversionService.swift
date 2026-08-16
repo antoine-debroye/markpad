@@ -27,7 +27,15 @@ public struct ConversionService: Sendable {
     }
 
     /// Converts a file on disk into `format`.
-    public func convert(fileAt url: URL, to format: ConversionFormat) throws -> Result {
+    ///
+    /// `progress` and `isCancelled` apply only to the import half — reading a PDF or image. They
+    /// both default to inert, so every existing caller behaves exactly as before.
+    public func convert(
+        fileAt url: URL,
+        to format: ConversionFormat,
+        options: ImportOptions = ImportOptions(),
+        isCancelled: @escaping @Sendable () -> Bool = { false }
+    ) throws -> Result {
         guard let input = ConversionInput.detect(for: url) else {
             throw ConversionError.unsupportedInput(url)
         }
@@ -40,9 +48,19 @@ public struct ConversionService: Sendable {
             }
             markdown = text
         case .pdf:
-            markdown = try PDFImporter().convert(url: url)
+            markdown = try PDFImporter().convert(
+                url: url,
+                options: options.pdf,
+                progress: options.progress,
+                isCancelled: isCancelled
+            )
         case .image:
-            markdown = try ImageImporter().convert(url: url)
+            markdown = try ImageImporter().convert(
+                url: url,
+                options: options.image,
+                progress: options.progress,
+                isCancelled: isCancelled
+            )
         }
 
         let baseName = url.deletingPathExtension().lastPathComponent
@@ -100,6 +118,42 @@ public struct ConversionService: Sendable {
     /// Reads any supported file as Markdown, converting PDFs and images on the way in.
     public func markdown(fromFileAt url: URL) throws -> String {
         try convert(fileAt: url, to: .markdown).text ?? ""
+    }
+
+    // MARK: Off the main thread
+
+    /// Converts a file without blocking the caller, reporting progress and honouring cancellation.
+    ///
+    /// Deliberately named differently from `convert(fileAt:to:)` rather than being an `async`
+    /// overload of it: the Shortcuts intents call the synchronous method from inside an `async`
+    /// `perform()`, and an overload sharing those argument labels would silently re-resolve
+    /// those calls and stop compiling.
+    public func importFile(
+        at url: URL,
+        to format: ConversionFormat,
+        options: ImportOptions = ImportOptions()
+    ) async throws -> Result {
+        // `Task.detached`, not `Task { }`: `Task.init` inherits actor isolation, so started from
+        // the main actor — which is where every caller lives — the work would run on the main
+        // thread and the freeze this exists to fix would survive.
+        let work = Task.detached(priority: .userInitiated) {
+            try self.convert(fileAt: url, to: format, options: options, isCancelled: { Task.isCancelled })
+        }
+        // A detached task does not inherit cancellation, so without this bridge cancelling the
+        // caller would never reach the importer and the Cancel button would do nothing.
+        return try await withTaskCancellationHandler {
+            try await work.value
+        } onCancel: {
+            work.cancel()
+        }
+    }
+
+    /// Reads any supported file as Markdown without blocking the caller.
+    public func importMarkdown(
+        fromFileAt url: URL,
+        options: ImportOptions = ImportOptions()
+    ) async throws -> String {
+        try await importFile(at: url, to: .markdown, options: options).text ?? ""
     }
 }
 

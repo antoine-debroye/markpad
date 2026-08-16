@@ -21,24 +21,43 @@ public struct ImageImporter: Sendable {
 
     public init() {}
 
-    public func convert(url: URL, options: Options = Options()) throws -> String {
+    public func convert(
+        url: URL,
+        options: Options = Options(),
+        progress: ImportProgress.Handler? = nil,
+        isCancelled: @escaping @Sendable () -> Bool = { false }
+    ) throws -> String {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
               let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
             throw ConversionError.unreadableFile(url)
         }
-        let markdown = try convert(image: image, options: options)
+        let markdown = try convert(image: image, options: options, progress: progress, isCancelled: isCancelled)
         guard !markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw ConversionError.noTextFound(url)
         }
         return markdown
     }
 
-    public func convert(image: CGImage, options: Options = Options()) throws -> String {
+    public func convert(
+        image: CGImage,
+        options: Options = Options(),
+        progress: ImportProgress.Handler? = nil,
+        isCancelled: @escaping @Sendable () -> Bool = { false }
+    ) throws -> String {
+        // One image is one unit of work, so there are no pages to count.
+        let reporter = ImportReporter(totalUnits: 1, handler: progress, isCancelled: isCancelled)
+        reporter.report(.recognizingText, index: 0)
+        try reporter.checkCancellation()
+
         let lines = try recognizeLines(in: image, options: options)
-        return TextBlockAssembler.markdown(
+        reporter.reportAssembling()
+
+        let markdown = TextBlockAssembler.markdown(
             from: lines,
             options: .init(inferHeadings: false)
         )
+        reporter.reportFinished()
+        return markdown
     }
 
     /// Recognised text grouped into reading order, with blank lines inserted where the

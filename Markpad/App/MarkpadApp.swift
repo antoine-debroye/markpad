@@ -33,29 +33,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         AppearanceMode.current.apply()
     }
 
+    /// Drives Dock-drop conversions. Held here because a drop can arrive before any document
+    /// window exists, so there is no window-owned session to use.
+    private let dropSession = ImportSession()
+
     func application(_ application: NSApplication, open urls: [URL]) {
         // PDFs and images dropped on the Dock icon are converted rather than opened.
+        var toConvert: [URL] = []
         for url in urls {
             switch ConversionInput.detect(for: url) {
             case .pdf, .image:
-                convert(url)
+                toConvert.append(url)
             default:
                 NSDocumentController.shared.openDocument(withContentsOf: url, display: true) { _, _, error in
                     if let error { NSApp.presentError(error) }
                 }
             }
         }
+        guard !toConvert.isEmpty else { return }
+        convert(toConvert)
     }
 
-    private func convert(_ url: URL) {
-        do {
-            let markdown = try ConversionService().markdown(fromFileAt: url)
-            DocumentActions.openNewDocument(
-                with: markdown,
-                suggestedName: url.deletingPathExtension().lastPathComponent
-            )
-        } catch {
-            NSApp.presentError(error)
+    /// Converts dropped files one after another, behind a single progress panel.
+    ///
+    /// A sheet is not an option here: there may be no window yet, and an `NSApplicationDelegate`
+    /// cannot present one regardless.
+    private func convert(_ urls: [URL]) {
+        ImportPanel.present(session: dropSession)
+        dropSession.begin(urls: urls) { message in
+            let alert = NSAlert()
+            alert.messageText = "Import failed"
+            alert.informativeText = message
+            alert.runModal()
+        }
+        // The session clears itself when the queue drains or the user cancels.
+        Task { @MainActor in
+            while dropSession.isRunning { try? await Task.sleep(for: .milliseconds(120)) }
+            ImportPanel.dismiss()
         }
     }
 }
@@ -76,8 +90,16 @@ struct UpdateCommands: Commands {
 /// File menu additions: exports, import, and the editing shortcuts the editor supports.
 struct MarkpadCommands: Commands {
     @FocusedValue(\.markdownDocument) private var focused
+    @FocusedValue(\.recentsPresentation) private var recentsPresentation
 
     var body: some Commands {
+        // Beside the system's own Open Recent submenu.
+        CommandGroup(after: .newItem) {
+            Button("Recents") { recentsPresentation?.wrappedValue.toggle() }
+                .keyboardShortcut("r", modifiers: [.command, .shift])
+                .disabled(recentsPresentation == nil)
+        }
+
         CommandGroup(after: .saveItem) {
             Menu("Export") {
                 ForEach([ConversionFormat.word, .html, .plainText], id: \.rawValue) { format in
@@ -101,7 +123,8 @@ struct MarkpadCommands: Commands {
             .disabled(focused == nil)
 
             Button("Import PDF or Image…") {
-                DocumentActions.importFile(onError: { message in
+                guard let focused else { return }
+                DocumentActions.importFile(into: focused.importSession, onError: { message in
                     let alert = NSAlert()
                     alert.messageText = "Import failed"
                     alert.informativeText = message
@@ -109,6 +132,7 @@ struct MarkpadCommands: Commands {
                 })
             }
             .keyboardShortcut("i", modifiers: [.command, .shift])
+            .disabled(focused == nil)
         }
 
         CommandMenu("Format") {
@@ -153,15 +177,28 @@ extension Notification.Name {
 struct FocusedDocument {
     let document: MarkdownDocument
     let fileURL: URL?
+    /// The front window's import, so ⇧⌘I drives the same sheet the toolbar does.
+    let importSession: ImportSession
 }
 
 private struct MarkdownDocumentFocusedValueKey: FocusedValueKey {
     typealias Value = FocusedDocument
 }
 
+/// Lets ⌘⇧R open the front window's Recents popover. A `Commands` struct cannot present one
+/// itself, but it can flip the binding the window's popover is attached to.
+private struct RecentsPresentationKey: FocusedValueKey {
+    typealias Value = Binding<Bool>
+}
+
 extension FocusedValues {
     var markdownDocument: FocusedDocument? {
         get { self[MarkdownDocumentFocusedValueKey.self] }
         set { self[MarkdownDocumentFocusedValueKey.self] = newValue }
+    }
+
+    var recentsPresentation: Binding<Bool>? {
+        get { self[RecentsPresentationKey.self] }
+        set { self[RecentsPresentationKey.self] = newValue }
     }
 }

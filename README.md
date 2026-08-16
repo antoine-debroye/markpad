@@ -4,7 +4,7 @@ A native macOS Markdown editor and conversion hub. Swift and AppKit throughout �
 
 - **Typora-style editing.** One pane. Markdown renders as you type; the block your caret is in reveals its raw syntax and re-renders when you leave it.
 - **Tables as tables, pictures as pictures.** Tables are drawn as grids, images and Mermaid diagrams appear in place, code blocks are coloured by language, and task boxes are clickable.
-- **Convert anything.** Markdown → Word (`.docx`), HTML, plain text. PDF → Markdown. Images → Markdown via on-device text recognition.
+- **Convert anything.** Markdown → Word (`.docx`), HTML, plain text. PDF → Markdown. Images → Markdown via on-device text recognition — page by page, with progress you can cancel, and nothing leaves the Mac.
 - **One click from anywhere.** Shortcuts actions for every conversion, so a Finder Quick Action or a hotkey does the whole job.
 - **Quick Look.** Press Space on a `.md` file in the Finder and see it formatted.
 - **Light, Dark or Automatic**, applied to the editor, previews and exported HTML alike.
@@ -161,4 +161,4 @@ This needs a paid Apple Developer account: a Developer ID certificate in your ke
 - Syntax highlighting is a tokenizer, not a parser: it colours comments, strings, numbers, keywords and type names, which covers reading code in a document but will not match a full language grammar.
 - PDF extraction targets single-column documents. Multi-column layouts, footnotes and complex tables are best effort.
 - Remote images (`https://…`) are not downloaded; an editor should not make network requests while you type. Local images render.
-- No Mermaid or LaTeX rendering.
+- No LaTeX rendering.

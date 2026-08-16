@@ -8,6 +8,8 @@
 
 Markdown renders as you type. Tables are grids, images are pictures, diagrams are diagrams — and the moment your caret enters a block, its raw syntax comes back so you can edit it. Swift and AppKit throughout: no Electron, and no web view in the editor.
 
+![Markpad editing a release-notes document, showing a rendered table, task list, syntax-highlighted code and blockquote](docs/screenshot.png)
+
 ### [⬇ Download the latest release](https://github.com/antoine-debroye/markpad/releases/latest)
 
 Open the disk image and drag Markpad to Applications. Signed and notarized, and it keeps itself up to date from then on.

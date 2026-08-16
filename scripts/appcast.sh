@@ -99,6 +99,24 @@ if [[ ! -f "$UPDATES/appcast.xml" ]]; then
     fi
 fi
 
+# A delta is a diff against the previous archive, so that archive has to be on disk. dist/ is
+# not in the repository, so a release cut from a clean checkout has nothing to diff against
+# and silently ships a full download instead — which is what happened to 1.1.2. The archives
+# the feed already lists are fetched back, newest first.
+if [[ -f "$UPDATES/appcast.xml" ]]; then
+    for url in $(grep -oE "https://[^\"]+/Markpad-[0-9.]+\.zip" "$UPDATES/appcast.xml" | head -2); do
+        name="$(basename "$url")"
+        [[ -f "$UPDATES/$name" ]] && continue
+        if curl -fsSL -o "$UPDATES/$name" "$url"; then
+            echo "==> Fetched $name to build a delta against"
+        else
+            rm -f "$UPDATES/$name"
+            echo "Note: $name could not be fetched, so this release will be a full" >&2
+            echo "      download for anyone updating from it." >&2
+        fi
+    done
+fi
+
 echo "==> Building the feed for $VERSION"
 "$GENERATE_APPCAST" \
     --download-url-prefix "https://github.com/$REPO/releases/download/$TAG/" \

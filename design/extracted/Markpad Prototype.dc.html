@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics><style>body{margin:0;background:linear-gradient(160deg,#cdd2d9,#b4bac3);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;min-height:100vh}a{color:#0066cc;text-decoration:none}a:hover{color:#004999;text-decoration:underline}</style></helmet>
+<div style="display:flex;flex-direction:column;align-items:center;padding:36px 24px 48px;gap:14px">
+<div style="font-size:12px;color:rgba(0,0,0,.55);max-width:1020px;width:100%;line-height:1.5">Clickable: outline toggle · Recents panel · Export menu (Word / HTML / Plain Text) · <strong>Import PDF or Image…</strong> runs the conversion flow and opens the result in a tab · click any block to reveal its Markdown · task checkboxes.</div>
+<div data-screen-label="Markpad prototype" style="width:1020px;max-width:100%;border-radius:12px;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.14),0 24px 60px rgba(0,0,0,.28);overflow:hidden;position:relative">
+  <div style="display:flex;align-items:center;gap:14px;height:50px;padding:0 14px;background:linear-gradient(#f7f7f8,#f0f0f2);border-bottom:1px solid #e0e0e5;position:relative">
+    <div style="display:flex;gap:8px;flex:none"><div style="width:12px;height:12px;border-radius:50%;background:#ff5f57"></div><div style="width:12px;height:12px;border-radius:50%;background:#febc2e"></div><div style="width:12px;height:12px;border-radius:50%;background:#28c840"></div></div>
+    <div onClick="{{ toggleOutline }}" title="Show or hide the document outline" style="width:26px;height:22px;border:1px solid #d2d2d7;border-radius:6px;background:#fff;display:flex;flex:none;cursor:pointer" style-hover="background:#f2f2f5"><div style="width:9px;background:#e6e6ea;border-right:1px solid #d2d2d7;border-radius:5px 0 0 5px"></div></div>
+    <div style="position:relative;flex:none">
+      <div onClick="{{ toggleRecents }}" title="Recent files" style="display:flex;align-items:center;justify-content:center;gap:5px;height:22px;padding:0 8px;border:1px solid #d2d2d7;border-radius:6px;background:{{ recentsBtnBg }};font-size:11.5px;color:#1d1d1f;cursor:pointer" style-hover="background:#f2f2f5">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="6" r="5" stroke="#6e6e73" stroke-width="1.2"></circle><path d="M6 3.4V6l1.8 1.3" stroke="#6e6e73" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+        Recents
+      </div>
+      <sc-if value="{{ recentsOpen }}" hint-placeholder-val="{{ false }}">
+        <div style="position:absolute;top:28px;left:0;width:268px;background:rgba(255,255,255,.98);border:1px solid #dcdce1;border-radius:8px;box-shadow:0 10px 34px rgba(0,0,0,.18);padding:5px;z-index:40">
+          <div style="padding:5px 10px 3px;font-size:10.5px;font-weight:600;color:#6e6e73;text-transform:uppercase;letter-spacing:.04em">Today</div>
+          <sc-for list="{{ recentsToday }}" as="rf" hint-placeholder-count="2">
+            <div onClick="{{ rf.open }}" style="display:flex;align-items:center;gap:9px;padding:5px 10px;border-radius:5px;cursor:pointer" style-hover="background:#eef3fb">
+              <div style="width:15px;height:19px;border:1px solid #b8b8bf;border-radius:2.5px;background:#fff;flex:none;display:flex;align-items:center;justify-content:center;font-family:ui-monospace,Menlo,monospace;font-size:6px;color:#6e6e73">M↓</div>
+              <div style="flex:1;min-width:0"><div style="font-size:12.5px;color:inherit;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ rf.name }}</div><div style="font-size:10.5px;opacity:.6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ rf.path }}</div></div>
+              <div style="font-size:10.5px;opacity:.55;flex:none">{{ rf.when }}</div>
+            </div>
+          </sc-for>
+          <div style="padding:7px 10px 3px;font-size:10.5px;font-weight:600;color:#6e6e73;text-transform:uppercase;letter-spacing:.04em">Earlier</div>
+          <sc-for list="{{ recentsEarlier }}" as="rf" hint-placeholder-count="3">
+            <div onClick="{{ rf.open }}" style="display:flex;align-items:center;gap:9px;padding:5px 10px;border-radius:5px;cursor:pointer" style-hover="background:#eef3fb">
+              <div style="width:15px;height:19px;border:1px solid #b8b8bf;border-radius:2.5px;background:#fff;flex:none;display:flex;align-items:center;justify-content:center;font-family:ui-monospace,Menlo,monospace;font-size:6px;color:#6e6e73">M↓</div>
+              <div style="flex:1;min-width:0"><div style="font-size:12.5px;color:inherit;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ rf.name }}</div><div style="font-size:10.5px;opacity:.6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ rf.path }}</div></div>
+              <div style="font-size:10.5px;opacity:.55;flex:none">{{ rf.when }}</div>
+            </div>
+          </sc-for>
+          <div style="height:1px;background:#e0e0e5;margin:5px 8px"></div>
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 10px 5px;font-size:11px;color:#6e6e73"><span>⌘⇧R to open</span><span style="cursor:pointer" style-hover="color:#1d1d1f">Clear Recents</span></div>
+        </div>
+      </sc-if>
+    </div>
+    <div style="position:absolute;left:0;right:0;display:flex;flex-direction:column;align-items:center;pointer-events:none"><div style="font-size:13px;font-weight:600;color:#1d1d1f">{{ title }}</div><div style="font-size:11px;color:#6e6e73">{{ words }}</div></div>
+    <div style="flex:1"></div>
+    <div style="position:relative;flex:none">
+      <div onClick="{{ toggleExport }}" style="display:flex;align-items:center;gap:6px;height:26px;padding:0 10px;border:1px solid #d2d2d7;border-radius:6px;background:#fff;font-size:12px;color:#1d1d1f;cursor:pointer" style-hover="background:#f2f2f5">
+        <svg width="12" height="13" viewBox="0 0 12 13" fill="none"><path d="M6 8V1M6 1L3.5 3.5M6 1l2.5 2.5" stroke="#1d1d1f" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"></path><path d="M2 6.5H1v5.5h10V6.5h-1" stroke="#1d1d1f" stroke-width="1.3" stroke-linecap="round"></path></svg>
+        Export <span style="font-size:9px;color:#6e6e73">▾</span>
+      </div>
+      <sc-if value="{{ exportOpen }}" hint-placeholder-val="{{ false }}">
+        <div style="position:absolute;top:30px;right:0;width:224px;background:rgba(255,255,255,.98);border:1px solid #dcdce1;border-radius:8px;box-shadow:0 10px 34px rgba(0,0,0,.18);padding:5px;z-index:40;font-size:13px;color:#1d1d1f">
+          <div onClick="{{ exportWord }}" style="padding:5px 10px;border-radius:5px;cursor:pointer" style-hover="background:#0066cc;color:#fff">Word…</div>
+          <div onClick="{{ exportHtml }}" style="padding:5px 10px;border-radius:5px;cursor:pointer" style-hover="background:#0066cc;color:#fff">HTML…</div>
+          <div onClick="{{ exportText }}" style="padding:5px 10px;border-radius:5px;cursor:pointer" style-hover="background:#0066cc;color:#fff">Plain Text…</div>
+          <div style="height:1px;background:#e0e0e5;margin:5px 8px"></div>
+          <div onClick="{{ startImport }}" style="padding:5px 10px;border-radius:5px;cursor:pointer;display:flex;justify-content:space-between" style-hover="background:#0066cc;color:#fff"><span>Import PDF or Image…</span><span style="opacity:.5">⇧⌘I</span></div>
+        </div>
+      </sc-if>
+    </div>
+  </div>
+  <sc-if value="{{ hasSurvey }}" hint-placeholder-val="{{ false }}">
+    <div style="display:flex;height:28px;background:#e2e2e6;border-bottom:1px solid #d0d0d5">
+      <sc-for list="{{ tabs }}" as="tab" hint-placeholder-count="2">
+        <div onClick="{{ tab.go }}" style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;font-size:12px;color:#1d1d1f;cursor:pointer;background:{{ tab.bg }};border-right:1px solid #d0d0d5">{{ tab.name }}</div>
+      </sc-for>
+    </div>
+  </sc-if>
+  <div style="display:flex;height:600px">
+    <sc-if value="{{ showOutline }}" hint-placeholder-val="{{ true }}">
+      <div style="width:210px;flex:none;background:#f4f4f6;border-right:1px solid #e0e0e5;padding:12px 8px;display:flex;flex-direction:column;gap:2px;font-size:13px">
+        <sc-for list="{{ outline }}" as="item" hint-placeholder-count="4">
+          <div style="padding:4px 10px;border-radius:6px;padding-left:{{ item.pad }};font-weight:{{ item.weight }};color:{{ item.color }};cursor:pointer" style-hover="background:#eaeaee">{{ item.name }}</div>
+        </sc-for>
+      </div>
+    </sc-if>
+    <div onClick="{{ bgClick }}" style="flex:1;background:#ffffff;overflow:auto;padding:36px 0;cursor:text">
+      <sc-if value="{{ docNotes }}" hint-placeholder-val="{{ true }}">
+      <div style="max-width:620px;margin:0 auto;padding:0 40px;font-size:16px;line-height:1.62;color:#1d1d1f">
+        <h1 onClick="{{ setH1 }}" style="margin:0 0 14px;font-size:30.4px;font-weight:700;color:#000000;line-height:1.2"><sc-if value="{{ rawH1 }}" hint-placeholder-val="{{ false }}"><span style="color:#b8b8bf;font-weight:400"># </span></sc-if>Ridgeline field notes</h1>
+        <p onClick="{{ setPara }}" style="margin:0 0 10px">
+          <sc-if value="{{ notRawPara }}" hint-placeholder-val="{{ true }}"><span>Survey of the <strong>north approach</strong> on 12 August. Trail register data lives in <span style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:14.7px;color:#b02a37;background:#f2f2f5;padding:1px 5px;border-radius:4px">register-2026.md</span> and the route map is in the <a href="#" onClick="{{ noop }}" style="color:#0066cc">shared folder</a>.</span></sc-if>
+          <sc-if value="{{ rawPara }}" hint-placeholder-val="{{ false }}"><span>Survey of the <span style="color:#b8b8bf">**</span><strong>north approach</strong><span style="color:#b8b8bf">**</span> on 12 August. Trail register data lives in <span style="color:#b8b8bf">`</span><span style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:14.7px;color:#b02a37">register-2026.md</span><span style="color:#b8b8bf">`</span> and the route map is in the <span style="color:#b8b8bf">[</span>shared folder<span style="color:#b8b8bf">](docs/map.md)</span>.</span></sc-if>
+        </p>
+        <h2 onClick="{{ setAccess }}" style="margin:22px 0 10px;font-size:24.8px;font-weight:700;color:#000000;line-height:1.25"><sc-if value="{{ rawAccess }}" hint-placeholder-val="{{ false }}"><span style="color:#b8b8bf;font-weight:400">## </span></sc-if>Access</h2>
+        <div onClick="{{ setQuote }}" style="display:flex;gap:14px;margin:0 0 12px"><div style="width:4px;border-radius:2px;background:#d2d2d7;flex:none"></div><p style="margin:0;color:#4a4a4f"><sc-if value="{{ rawQuote }}" hint-placeholder-val="{{ false }}"><span style="color:#b8b8bf">&gt; </span></sc-if>Gate code changes on the first of the month — check with the ranger station before heading up.</p></div>
+        <h2 onClick="{{ setGear }}" style="margin:22px 0 10px;font-size:24.8px;font-weight:700;color:#000000;line-height:1.25"><sc-if value="{{ rawGear }}" hint-placeholder-val="{{ false }}"><span style="color:#b8b8bf;font-weight:400">## </span></sc-if>Gear checklist</h2>
+        <div style="display:flex;flex-direction:column;gap:6px;margin:0 0 12px">
+          <sc-for list="{{ taskRows }}" as="row" hint-placeholder-count="3">
+            <div style="display:flex;align-items:center;gap:10px;cursor:pointer" onClick="{{ row.toggle }}">
+              <sc-if value="{{ row.done }}" hint-placeholder-val="{{ false }}"><div style="width:16px;height:16px;border-radius:4px;background:#0066cc;flex:none;display:flex;align-items:center;justify-content:center"><svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4l2.7 2.7L9 1" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path></svg></div></sc-if>
+              <sc-if value="{{ row.open }}" hint-placeholder-val="{{ true }}"><div style="width:16px;height:16px;border-radius:4px;border:1.5px solid #b8b8bf;flex:none"></div></sc-if>
+              <span>{{ row.label }}</span>
+            </div>
+          </sc-for>
+        </div>
+        <h2 onClick="{{ setShort }}" style="margin:22px 0 10px;font-size:24.8px;font-weight:700;color:#000000;line-height:1.25"><sc-if value="{{ rawShort }}" hint-placeholder-val="{{ false }}"><span style="color:#b8b8bf;font-weight:400">## </span></sc-if>Shortcuts actions</h2>
+        <div style="border:1px solid #dcdce1;border-radius:6px;overflow:hidden;font-size:14px">
+          <div style="display:grid;grid-template-columns:1.4fr 1fr 1fr;background:#f7f7f9;font-weight:600;border-bottom:1px solid #dcdce1"><div style="padding:8px 12px">Action</div><div style="padding:8px 12px;border-left:1px solid #dcdce1">Input</div><div style="padding:8px 12px;border-left:1px solid #dcdce1">Output</div></div>
+          <div style="display:grid;grid-template-columns:1.4fr 1fr 1fr;border-bottom:1px solid #dcdce1"><div style="padding:8px 12px">Convert Files</div><div style="padding:8px 12px;border-left:1px solid #dcdce1">MD, PDF, image</div><div style="padding:8px 12px;border-left:1px solid #dcdce1">Chosen format</div></div>
+          <div style="display:grid;grid-template-columns:1.4fr 1fr 1fr"><div style="padding:8px 12px">Get Markdown from File</div><div style="padding:8px 12px;border-left:1px solid #dcdce1">PDF, image, MD</div><div style="padding:8px 12px;border-left:1px solid #dcdce1">Markdown text</div></div>
+        </div>
+      </div>
+      </sc-if>
+      <sc-if value="{{ docSurvey }}" hint-placeholder-val="{{ false }}">
+      <div style="max-width:620px;margin:0 auto;padding:0 40px;font-size:16px;line-height:1.62;color:#1d1d1f">
+        <h1 style="margin:0 0 14px;font-size:30.4px;font-weight:700;color:#000000;line-height:1.2">Site survey</h1>
+        <p style="margin:0 0 10px;color:#6e6e73;font-size:14px">Converted from <span style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:13px">site-survey.pdf</span> — 8 pages, recognized on device. Review headings and tables before exporting.</p>
+        <p style="margin:0 0 10px">Walkover completed 9 August under dry conditions. Access from the <strong>east service road</strong>; all zones photographed and logged.</p>
+        <h2 style="margin:22px 0 10px;font-size:24.8px;font-weight:700;color:#000000;line-height:1.25">Findings</h2>
+        <div style="display:flex;flex-direction:column;gap:6px;margin:0 0 12px">
+          <div style="display:flex;gap:10px"><span style="color:#6e6e73">•</span><span>Drainage culvert at marker 14 partially blocked</span></div>
+          <div style="display:flex;gap:10px"><span style="color:#6e6e73">•</span><span>Retaining wall sound; monitor hairline crack, north face</span></div>
+          <div style="display:flex;gap:10px"><span style="color:#6e6e73">•</span><span>Signage faded in zones B and D</span></div>
+        </div>
+        <h2 style="margin:22px 0 10px;font-size:24.8px;font-weight:700;color:#000000;line-height:1.25">Zone condition</h2>
+        <div style="border:1px solid #dcdce1;border-radius:6px;overflow:hidden;font-size:14px">
+          <div style="display:grid;grid-template-columns:1fr 1fr 1.4fr;background:#f7f7f9;font-weight:600;border-bottom:1px solid #dcdce1"><div style="padding:8px 12px">Zone</div><div style="padding:8px 12px;border-left:1px solid #dcdce1">Condition</div><div style="padding:8px 12px;border-left:1px solid #dcdce1">Action</div></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1.4fr;border-bottom:1px solid #dcdce1"><div style="padding:8px 12px">A</div><div style="padding:8px 12px;border-left:1px solid #dcdce1">Good</div><div style="padding:8px 12px;border-left:1px solid #dcdce1">None</div></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1.4fr;border-bottom:1px solid #dcdce1"><div style="padding:8px 12px">B</div><div style="padding:8px 12px;border-left:1px solid #dcdce1">Fair</div><div style="padding:8px 12px;border-left:1px solid #dcdce1">Replace signage</div></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1.4fr"><div style="padding:8px 12px">D</div><div style="padding:8px 12px;border-left:1px solid #dcdce1">Fair</div><div style="padding:8px 12px;border-left:1px solid #dcdce1">Replace signage, clear culvert</div></div>
+        </div>
+      </div>
+      </sc-if>
+    </div>
+  </div>
+  <sc-if value="{{ importing }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;inset:0;background:rgba(0,0,0,.18);z-index:50"></div>
+    <div style="position:absolute;top:50px;left:50%;transform:translateX(-50%);width:440px;background:#f6f6f8;border-radius:0 0 12px 12px;box-shadow:0 18px 44px rgba(0,0,0,.3);padding:22px 22px 18px;z-index:60">
+      <div style="font-size:14px;font-weight:600;color:#1d1d1f;margin-bottom:14px">Import PDF or Image</div>
+      <div style="display:flex;align-items:center;gap:12px;background:#fff;border:1px solid #dcdce1;border-radius:8px;padding:10px 12px">
+        <div style="width:34px;height:42px;border-radius:4px;background:repeating-linear-gradient(45deg,#e8e8ed,#e8e8ed 4px,#f2f2f5 4px,#f2f2f5 8px);border:1px solid #d2d2d7;flex:none;display:flex;align-items:center;justify-content:center;font-family:ui-monospace,Menlo,monospace;font-size:8px;color:#6e6e73">PDF</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:500;color:#1d1d1f">site-survey.pdf <span style="color:#6e6e73;font-weight:400">· 2.4 MB</span></div>
+          <div style="font-size:12px;color:#6e6e73;margin-top:2px">→ Markdown</div>
+        </div>
+      </div>
+      <div style="margin-top:16px">
+        <div style="height:5px;border-radius:3px;background:#e0e0e5;overflow:hidden"><div style="width:{{ progressPct }};height:100%;border-radius:3px;background:#0066cc;transition:width .25s"></div></div>
+        <div style="display:flex;justify-content:space-between;margin-top:7px;font-size:12px;color:#6e6e73"><span style="white-space:nowrap">Recognizing text on device — page {{ page }} of 8</span><span>{{ progressPct }}</span></div>
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:18px">
+        <div onClick="{{ cancelImport }}" style="height:26px;padding:0 14px;display:flex;align-items:center;border:1px solid #d2d2d7;border-radius:6px;background:#fff;font-size:12px;color:#1d1d1f;cursor:pointer" style-hover="background:#f2f2f5">Cancel</div>
+      </div>
+      <div style="margin-top:14px;padding-top:12px;border-top:1px solid #e0e0e5;font-size:11.5px;color:#6e6e73;line-height:1.5">Opens as a new unsaved document named <span style="font-family:ui-monospace,Menlo,monospace">site-survey.md</span>. Nothing leaves this Mac.</div>
+    </div>
+  </sc-if>
+  <sc-if value="{{ hasToast }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;bottom:18px;left:50%;transform:translateX(-50%);padding:7px 16px;border-radius:999px;background:rgba(28,28,30,.92);color:#e8e8ed;font-size:12.5px;box-shadow:0 6px 20px rgba(0,0,0,.25);z-index:70;white-space:nowrap">{{ toast }}</div>
+  </sc-if>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;: {&quot;width&quot;: 1220, &quot;height&quot;: 820}, &quot;showOutline&quot;: {&quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: true, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;Layout&quot;}, &quot;importSpeed&quot;: {&quot;editor&quot;: &quot;range&quot;, &quot;default&quot;: 260, &quot;min&quot;: 80, &quot;max&quot;: 600, &quot;step&quot;: 20, &quot;unit&quot;: &quot;ms&quot;, &quot;tsType&quot;: &quot;number&quot;, &quot;section&quot;: &quot;Import flow&quot;}}">
+class Component extends DCLogic {
+  state = { showOutline: true, exportOpen: false, recentsOpen: false, importing: false, progress: 0, doc: 'notes', hasSurvey: false, active: null, tasks: [true, false, false], toast: null };
+  componentWillUnmount() { clearInterval(this._t); clearTimeout(this._toastT); clearTimeout(this._doneT); }
+  showToast(msg) {
+    clearTimeout(this._toastT);
+    this.setState({ toast: msg });
+    this._toastT = setTimeout(() => this.setState({ toast: null }), 2600);
+  }
+  finishImport() {
+    this.setState({ importing: false, doc: 'survey', hasSurvey: true, active: null });
+    this.showToast('Imported site-survey.pdf as site-survey.md');
+  }
+  renderVals() {
+    const s = this.state;
+    const speed = this.props.importSpeed ?? 260;
+    const stop = (fn) => (e) => { e.stopPropagation(); fn(); };
+    const setActive = (name) => stop(() => this.setState({ active: name, exportOpen: false, recentsOpen: false }));
+    const openRecent = (target, name) => stop(() => {
+      this.setState({ recentsOpen: false });
+      if (target === 'notes') { this.setState({ doc: 'notes', active: null }); }
+      else if (target === 'survey' && this.state.hasSurvey) { this.setState({ doc: 'survey', active: null }); }
+      else { this.showToast('Opening ' + name + '…'); }
+    });
+    const doExport = (ext) => stop(() => {
+      this.setState({ exportOpen: false });
+      const base = s.doc === 'notes' ? 'Ridgeline Notes' : 'site-survey';
+      this.showToast('Exported ' + base + ext);
+    });
+    const labels = ['Waypoint beacon batteries', 'Print revised elevation profile', 'File permit renewal with the district office'];
+    const notesOutline = [
+      { name: 'Ridgeline field notes', pad: '10px', weight: 500, color: '#1d1d1f' },
+      { name: 'Access', pad: '22px', weight: 400, color: '#6e6e73' },
+      { name: 'Gear checklist', pad: '22px', weight: 400, color: '#6e6e73' },
+      { name: 'Shortcuts actions', pad: '22px', weight: 400, color: '#6e6e73' },
+    ];
+    const surveyOutline = [
+      { name: 'Site survey', pad: '10px', weight: 500, color: '#1d1d1f' },
+      { name: 'Findings', pad: '22px', weight: 400, color: '#6e6e73' },
+      { name: 'Zone condition', pad: '22px', weight: 400, color: '#6e6e73' },
+    ];
+    const go = (doc) => stop(() => this.setState({ doc, active: null, exportOpen: false }));
+    return {
+      title: s.doc === 'notes' ? 'Ridgeline Notes.md' : 'site-survey.md — Edited',
+      words: s.doc === 'notes' ? '412 words' : '268 words',
+      showOutline: s.showOutline && (this.props.showOutline ?? true),
+      toggleOutline: stop(() => this.setState(p => ({ showOutline: !p.showOutline }))),
+      exportOpen: s.exportOpen,
+      toggleExport: stop(() => this.setState(p => ({ exportOpen: !p.exportOpen, recentsOpen: false }))),
+      recentsOpen: s.recentsOpen,
+      recentsBtnBg: s.recentsOpen ? '#e6e6ea' : '#fff',
+      toggleRecents: stop(() => this.setState(p => ({ recentsOpen: !p.recentsOpen, exportOpen: false }))),
+      recentsToday: [
+        { name: 'Ridgeline Notes.md', path: '~/Documents/Trails', when: '9:41', open: openRecent('notes', 'Ridgeline Notes.md') },
+        { name: 'site-survey.md', path: '~/Downloads', when: '9:12', open: openRecent('survey', 'site-survey.md') },
+      ],
+      recentsEarlier: [
+        { name: 'trail-permits.md', path: '~/Documents/Trails', when: 'Yesterday', open: openRecent(null, 'trail-permits.md') },
+        { name: 'ranger-contacts.md', path: '~/Documents/Trails', when: 'Tue', open: openRecent(null, 'ranger-contacts.md') },
+        { name: 'winter-closures.md', path: '~/Documents/Archive', when: 'Aug 8', open: openRecent(null, 'winter-closures.md') },
+      ],
+      exportWord: doExport('.docx'), exportHtml: doExport('.html'), exportText: doExport('.txt'),
+      startImport: stop(() => {
+        this.setState({ exportOpen: false, importing: true, progress: 0 });
+        clearInterval(this._t);
+        this._t = setInterval(() => {
+          this.setState(p => {
+            const progress = Math.min(100, p.progress + 7);
+            if (progress >= 100) {
+              clearInterval(this._t);
+              this._doneT = setTimeout(() => this.finishImport(), 450);
+            }
+            return { progress };
+          });
+        }, speed);
+      }),
+      cancelImport: stop(() => { clearInterval(this._t); clearTimeout(this._doneT); this.setState({ importing: false, progress: 0 }); }),
+      importing: s.importing,
+      progressPct: s.progress + '%',
+      page: Math.min(8, Math.max(1, Math.ceil(s.progress / 12.5))),
+      docNotes: s.doc === 'notes', docSurvey: s.doc === 'survey',
+      hasSurvey: s.hasSurvey,
+      tabs: [
+        { name: 'Ridgeline Notes.md', go: go('notes'), bg: s.doc === 'notes' ? '#f7f7f8' : '#e2e2e6' },
+        { name: 'site-survey.md', go: go('survey'), bg: s.doc === 'survey' ? '#f7f7f8' : '#e2e2e6' },
+      ],
+      outline: s.doc === 'notes' ? notesOutline : surveyOutline,
+      taskRows: labels.map((label, i) => ({
+        label, done: s.tasks[i], open: !s.tasks[i],
+        toggle: stop(() => this.setState(p => { const tasks = p.tasks.slice(); tasks[i] = !tasks[i]; return { tasks }; })),
+      })),
+      bgClick: () => this.setState({ active: null, exportOpen: false, recentsOpen: false }),
+      noop: (e) => { e.preventDefault(); e.stopPropagation(); },
+      setH1: setActive('h1'), setPara: setActive('para'), setAccess: setActive('access'),
+      setQuote: setActive('quote'), setGear: setActive('gear'), setShort: setActive('short'),
+      rawH1: s.active === 'h1', rawPara: s.active === 'para', notRawPara: s.active !== 'para',
+      rawAccess: s.active === 'access', rawQuote: s.active === 'quote',
+      rawGear: s.active === 'gear', rawShort: s.active === 'short',
+      toast: s.toast, hasToast: !!s.toast,
+    };
+  }
+}
+</script>
+</body>
+</html>

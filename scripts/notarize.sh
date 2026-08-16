@@ -27,9 +27,27 @@ APP="dist/Markpad.app"
 VERSION="$(./scripts/version.sh | awk '{print $1}')"
 ZIP="dist/Markpad-$VERSION.zip"
 
-# The Quick Look extension is signed before the app that contains it: nested code must be
-# sealed first or the outer signature will not validate.
+# Everything nested is signed before the app that contains it: nested code must be sealed
+# first or the outer signature will not validate.
 echo "==> Signing"
+
+# Sparkle carries its own helpers, and they are signed innermost-first for the same reason.
+# Missing one is the usual cause of an update that downloads and then fails to install, with
+# an error that does not say which component was at fault. The XPC services only exist in a
+# sandboxed build, hence the guard.
+SPARKLE="$APP/Contents/Frameworks/Sparkle.framework"
+if [[ -d "$SPARKLE" ]]; then
+    for xpc in "$SPARKLE/Versions/B/XPCServices/"*.xpc; do
+        [[ -e "$xpc" ]] || continue
+        codesign --force --options runtime --timestamp --sign "$DEVELOPER_ID" "$xpc"
+    done
+    codesign --force --options runtime --timestamp --sign "$DEVELOPER_ID" \
+        "$SPARKLE/Versions/B/Updater.app"
+    codesign --force --options runtime --timestamp --sign "$DEVELOPER_ID" \
+        "$SPARKLE/Versions/B/Autoupdate"
+    codesign --force --options runtime --timestamp --sign "$DEVELOPER_ID" "$SPARKLE"
+fi
+
 codesign --force --options runtime --timestamp \
     --entitlements MarkpadQuickLook/MarkpadQuickLook.entitlements \
     --sign "$DEVELOPER_ID" \

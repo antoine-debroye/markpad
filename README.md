@@ -35,6 +35,30 @@ To run the app from the Finder, and to make Quick Look and Shortcuts pick it up 
 
 `patch`, `minor` and `major` move the marketing version; `set 2.0.0` fixes it outright; `build` leaves it alone and moves the build number only. Every bump also raises the build number, which is never reset — macOS expects it to increase monotonically, and Apple rejects a notarisation that reuses a version, so one ever-rising counter makes reuse impossible. Run `./scripts/version.sh` on its own to print the current version.
 
+## Updating
+
+Markpad updates itself with [Sparkle](https://sparkle-project.org). It reads a feed from the newest GitHub release once a day, and installs what it finds in the background, applying it at the next launch. There is a "Check for Updates…" item in the application menu for asking directly, and a switch in Settings to turn the background checks off.
+
+Sparkle decides whether a release is newer by comparing build numbers, which is why `version.sh` never lets that number fall.
+
+One-off setup, which creates the key that updates are signed with:
+
+```bash
+./scripts/appcast.sh setup
+```
+
+The private key goes into your login keychain and the public half into `project.yml`. **Back the private key up somewhere offline.** Losing it ends updating permanently for everyone already running Markpad: they verify against the public key baked into their copy and will refuse anything signed by a different one. Until this is run, `SUPublicEDKey` is empty, updating stays switched off, and the menu item is greyed out — Sparkle will not install something it cannot verify.
+
+Releasing, once set up:
+
+```bash
+./scripts/version.sh minor
+DEVELOPER_ID="Developer ID Application: Your Name (TEAMID)" ./scripts/notarize.sh
+./scripts/appcast.sh
+```
+
+That leaves the archive and `appcast.xml` in `dist/updates/`; `appcast.sh` prints the `gh release create` line to publish them. An update must be signed and notarized — an ad-hoc build downloads and then refuses to launch — so `notarize.sh` is not optional here.
+
 ## Testing
 
 ```bash

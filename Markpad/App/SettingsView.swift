@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @AppStorage(AppearanceMode.storageKey) private var appearance = AppearanceMode.automatic.rawValue
+    @ObservedObject var updater: Updater
 
     var body: some View {
         Form {
@@ -21,8 +22,18 @@ struct SettingsView: View {
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+
+            Toggle("Check for updates automatically", isOn: Binding(
+                get: { updater.automaticallyChecksForUpdates },
+                set: { updater.automaticallyChecksForUpdates = $0 }
+            ))
+
+            Text("Markpad checks once a day and installs updates in the background, applying them the next time it launches. Updates are refused unless they are signed by the same key as this copy.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .formStyle(.grouped)
-        .frame(width: 420, height: 260)
+        .frame(width: 420, height: 380)
     }
 }

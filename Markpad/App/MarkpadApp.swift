@@ -5,6 +5,8 @@ import SwiftUI
 struct MarkpadApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @AppStorage(AppearanceMode.storageKey) private var appearance = AppearanceMode.automatic.rawValue
+    // Held for the life of the app: Sparkle's scheduled checks stop when the updater goes away.
+    @StateObject private var updater = Updater()
 
     var body: some Scene {
         DocumentGroup(newDocument: { MarkdownDocument() }) { configuration in
@@ -14,10 +16,11 @@ struct MarkpadApp: App {
         .defaultSize(width: 920, height: 720)
         .commands {
             MarkpadCommands()
+            UpdateCommands(updater: updater)
         }
 
         Settings {
-            SettingsView()
+            SettingsView(updater: updater)
         }
     }
 }
@@ -53,6 +56,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             )
         } catch {
             NSApp.presentError(error)
+        }
+    }
+}
+
+/// "Check for Updates…" in the application menu, where macOS users look for it. Updates also
+/// install on their own in the background; this is for the person who wants to ask.
+struct UpdateCommands: Commands {
+    @ObservedObject var updater: Updater
+
+    var body: some Commands {
+        CommandGroup(after: .appInfo) {
+            Button("Check for Updates…") { updater.checkForUpdates() }
+                .disabled(!updater.canCheckForUpdates)
         }
     }
 }

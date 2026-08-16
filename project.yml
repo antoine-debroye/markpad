@@ -10,13 +10,22 @@ options:
 packages:
   MarkpadCore:
     path: MarkpadCore
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    from: 2.9.5
 
 settings:
   base:
     SWIFT_VERSION: "5.0"
     MARKETING_VERSION: "1.0.0"
     CURRENT_PROJECT_VERSION: "1"
-    ENABLE_HARDENED_RUNTIME: YES
+    # Off for local builds, and added back by scripts/notarize.sh, which signs everything with
+    # --options runtime. Hardened runtime enforces library validation: a loaded framework must
+    # carry the same team identity as the process. Sparkle is a separate framework, and two
+    # ad-hoc signatures never match, so a hardened ad-hoc build cannot load it — the app dies
+    # at launch with "Library not loaded ... different Team IDs". A Developer ID build signs
+    # app and framework alike and validates fine, which is why only local builds need this.
+    ENABLE_HARDENED_RUNTIME: NO
     # Ad-hoc signing so the project builds and runs on any Mac without a developer
     # account. scripts/notarize.sh overrides this with a Developer ID identity.
     CODE_SIGN_STYLE: Manual
@@ -41,6 +50,8 @@ targets:
     dependencies:
       - package: MarkpadCore
         product: MarkpadCore
+      - package: Sparkle
+        product: Sparkle
       - target: MarkpadQuickLook
         embed: true
     settings:
@@ -66,6 +77,19 @@ targets:
         NSSupportsAutomaticTermination: true
         NSSupportsSuddenTermination: true
         ITSAppUsesNonExemptEncryption: false
+        # Sparkle. The feed is served from the newest GitHub release, so publishing a release
+        # with an appcast.xml asset is all it takes to offer an update — the URL never changes.
+        SUFeedURL: https://github.com/antoine-debroye/markpad/releases/latest/download/appcast.xml
+        # The EdDSA public key that updates are verified against; the private half lives in the
+        # login keychain. Sparkle refuses to install anything it cannot verify, so an empty key
+        # disables updating rather than weakening it. Run ./scripts/appcast.sh setup to fill in.
+        SUPublicEDKey: ""
+        SUEnableAutomaticChecks: true
+        # Downloads and installs without asking, applying the update on next launch, which is
+        # the "just keep it current" behaviour. Set to false to prompt before installing.
+        SUAutomaticallyUpdate: true
+        # Once a day. Sparkle also checks shortly after launch when a check is overdue.
+        SUScheduledCheckInterval: 86400
         # net.daringfireball.markdown is not declared by the system, so Markpad imports it.
         # Without this, the open panel and DocumentGroup treat .md files as unknown.
         UTImportedTypeDeclarations:

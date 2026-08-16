@@ -84,6 +84,21 @@ UPDATES="dist/updates"
 mkdir -p "$UPDATES"
 cp "$ARCHIVE" "$UPDATES/"
 
+# generate_appcast appends to whatever feed it finds and writes a fresh one otherwise, and
+# dist/ is not in the repository — so from a clean checkout it would publish a feed listing
+# this release alone, dropping every earlier version. Seeding it with what is currently live
+# keeps the history, which is what lets someone several versions behind still be offered an
+# update. A 404 is the expected answer before the first release.
+FEED_URL="https://github.com/$REPO/releases/latest/download/appcast.xml"
+if [[ ! -f "$UPDATES/appcast.xml" ]]; then
+    if curl -fsSL -o "$UPDATES/appcast.xml" "$FEED_URL" 2>/dev/null; then
+        echo "==> Seeded the feed from the published one ($(grep -c "<item>" "$UPDATES/appcast.xml") existing releases)"
+    else
+        echo "==> No published feed yet; starting a new one"
+        rm -f "$UPDATES/appcast.xml"
+    fi
+fi
+
 echo "==> Building the feed for $VERSION"
 # The enclosure URLs are pinned to this release's tag. Older entries in an existing feed keep
 # the URLs they were written with, so previous releases stay downloadable.

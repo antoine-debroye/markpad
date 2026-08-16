@@ -125,6 +125,23 @@ final class StyleEngineTests: XCTestCase {
         XCTAssertEqual(checkboxes, [true, false])
     }
 
+    /// On a task item the checkbox is the marker. Painting the "- " as a bullet too gave every
+    /// task row a stray dot in front of its box.
+    func testTaskItemPrefixIsHiddenRatherThanBulleted() {
+        let layout = engine.layout(for: "- [x] done\n")
+        let prefix = layout.markers.first { substring("- [x] done\n", $0.range) == "- " }
+        XCTAssertEqual(prefix?.presentation, .hidden)
+        XCTAssertFalse(
+            layout.markers.contains { $0.presentation == .bullet },
+            "a task row should paint no bullet"
+        )
+    }
+
+    func testPlainListItemKeepsItsBullet() {
+        let layout = engine.layout(for: "- plain\n")
+        XCTAssertTrue(layout.markers.contains { $0.presentation == .bullet })
+    }
+
     func testNestedListsReportTheirDepth() {
         let layout = engine.layout(for: "- one\n  - two\n")
         XCTAssertEqual(layout.blocks.map(\.listDepth), [1, 2])
@@ -167,12 +184,25 @@ final class StyleEngineTests: XCTestCase {
         XCTAssertTrue(layout.concealedMarkers(selection: everything).isEmpty)
     }
 
-    func testBulletAndCheckboxMarkersAreNeverConcealed() {
-        let source = "- [x] done\n"
-        let layout = engine.layout(for: source)
-        // These are painted over rather than collapsed, so they must keep their width.
-        let concealed = layout.concealedMarkers(selection: NSRange(location: 500, length: 0))
-        XCTAssertTrue(concealed.isEmpty, "\(concealed)")
+    func testPaintedMarkersAreNeverConcealed() {
+        // A painted marker is drawn over its own characters, so collapsing it would leave the
+        // symbol with nothing to sit on. A task item's "- " prefix is the exception: it is
+        // hidden on purpose, because the checkbox — not a bullet — is that row's marker.
+        for source in ["- [x] done\n", "- plain item\n", "1. numbered\n"] {
+            let layout = engine.layout(for: source)
+            let concealed = layout.concealedMarkers(selection: NSRange(location: 500, length: 0))
+            let painted = layout.markers.filter {
+                if case .bullet = $0.presentation { return true }
+                if case .checkbox = $0.presentation { return true }
+                return false
+            }
+            for marker in painted {
+                XCTAssertFalse(
+                    concealed.contains { $0.range == marker.range },
+                    "painted marker collapsed in \(source.debugDescription)"
+                )
+            }
+        }
     }
 
     // MARK: Robustness

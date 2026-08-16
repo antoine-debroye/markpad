@@ -179,7 +179,9 @@ private struct LayoutBuilder {
             if let checkbox = item.checkbox, let box = checkboxRange(within: gap) {
                 let markerLength = box.location - gap.location
                 let markerRange = NSRange(location: gap.location, length: markerLength)
-                addMarkers([markerRange], markerPresentation(for: markerRange))
+                // Hidden, not painted: on a task item the checkbox *is* the marker, so drawing
+                // a bullet as well would give every row a stray dot before its box.
+                addMarkers([markerRange], .hidden)
                 addMarkers([box], .checkbox(checked: checkbox == .checked))
             } else {
                 addMarkers([gap], markerPresentation(for: gap))

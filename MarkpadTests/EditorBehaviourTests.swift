@@ -130,6 +130,49 @@ final class EditorRenderingTests: XCTestCase {
         XCTAssertEqual(width(of: NSRange(location: 0, length: 8)), 0, accuracy: 0.01)
     }
 
+    /// The quote indent is read by TextKit from the paragraph's *first* character — the ">" —
+    /// which sits outside the range cmark reports for the quoted paragraph. Styling only that
+    /// inner range left the indent at zero, so the quote bar drew straight over the text.
+    /// The head indent at a given character, which is where TextKit reads a paragraph's style
+    /// from — the first character of the paragraph.
+    private func headIndent(at location: Int) throws -> CGFloat {
+        let style = try XCTUnwrap(
+            storage.attribute(.paragraphStyle, at: location, effectiveRange: nil) as? NSParagraphStyle
+        )
+        return style.headIndent
+    }
+
+    func testQuoteIndentAppliesFromTheMarkerCharacter() throws {
+        render("> Gate code changes on the first of the month.\n")
+        XCTAssertEqual(try headIndent(at: 0), MarkdownStyler.QuoteBar.indent, accuracy: 0.01,
+                       "the '>' character must carry the quote indent")
+    }
+
+    func testNestedQuotesIndentPerLevel() throws {
+        render("> > deeply quoted\n")
+        XCTAssertEqual(try headIndent(at: 0), MarkdownStyler.QuoteBar.indent * 2, accuracy: 0.01)
+    }
+
+    func testBodyParagraphIsNotIndented() throws {
+        render("Just ordinary prose.\n")
+        XCTAssertEqual(try headIndent(at: 0), 0, accuracy: 0.01)
+    }
+
+    /// A checkbox is painted over the characters beneath it, so those characters' width decides
+    /// where the row's label starts. In the body font "[x]" is wider than "[ ]", which pushed a
+    /// ticked row's label further right than its neighbours'. The design aligns them all.
+    func testTaskLabelsAlignRegardlessOfTickState() throws {
+        let source = "- [x] done\n- [ ] todo\n"
+        render(source)
+
+        let checked = (source as NSString).range(of: "[x]")
+        let unchecked = (source as NSString).range(of: "[ ]")
+        XCTAssertEqual(
+            width(of: checked), width(of: unchecked), accuracy: 0.5,
+            "a ticked and an unticked box must occupy the same width"
+        )
+    }
+
     func testBulletMarkerKeepsItsWidthSoTheSymbolCanBePainted() {
         let source = "- an item\n"
         let layout = render(source)

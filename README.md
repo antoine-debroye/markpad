@@ -25,6 +25,19 @@ To run the app from the Finder, and to make Quick Look and Shortcuts pick it up 
 ./scripts/build.sh release && cp -R dist/Markpad.app /Applications/
 ```
 
+For a disk image with the usual drag-to-install window:
+
+```bash
+./scripts/package.sh
+```
+
+This writes `dist/Markpad-<version>.dmg`. A local build is signed ad-hoc, so the image only opens on the Mac that made it. Set `DEVELOPER_ID` and the image is signed, notarized and stapled too, which is what makes it shareable:
+
+```bash
+DEVELOPER_ID="Developer ID Application: Your Name (TEAMID)" ./scripts/notarize.sh
+DEVELOPER_ID="Developer ID Application: Your Name (TEAMID)" ./scripts/package.sh --no-build
+```
+
 ## Versioning
 
 `project.yml` holds both numbers, and the app and the Quick Look extension read the same pair — a nested extension whose version has drifted from its host fails signature validation. Bump them with:

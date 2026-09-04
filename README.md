@@ -61,6 +61,7 @@ If a `.md` file still previews as plain text after installing, enable Markpad un
 - Syntax highlighting is a tokenizer, not a parser: it colours comments, strings, numbers, keywords and type names, which covers reading code in a document but will not match a full language grammar.
 - PDF extraction targets single-column documents. Multi-column layouts, footnotes and complex tables are best effort.
 - Remote images (`https://…`) are not downloaded; an editor should not make network requests while you type. Local images render.
+- Images stored beside a document do not appear in the Finder preview. A preview extension is sandboxed to the one file the reader selected and cannot open the picture next to it, so its Markdown stays on screen instead; opening the document shows the picture.
 - No LaTeX rendering.
 
 ## Licence
@@ -114,7 +115,7 @@ Markpad/          The app: document shell, editor, Shortcuts actions, menus
 MarkpadQuickLook/ Quick Look preview extension
 ```
 
-### The editor
+### The editor, and the preview
 
 The text storage always holds the raw Markdown source, unchanged. Rendering comes from two things applied on top of it:
 
@@ -123,12 +124,14 @@ The text storage always holds the raw Markdown source, unchanged. Rendering come
 
 Because the text is never rewritten, saving, undo, find and copy all operate on exactly what the author typed, and there is no source map to fall out of sync. When the caret enters a block, that block's markers regain their width; when it leaves, they collapse again.
 
+Pressing Space in the Finder shows this same renderer, read-only: `EditorHost` builds the view for both, so a document looks the same previewed as opened, and the preview scrolls like any other Mac window rather than like an embedded web page. A preview reports its caret past the end of the document, which is what keeps every block rendered instead of opening the first one back into source.
+
 Tables and images use the same idea. A table's `|` becomes a control glyph whose width is exactly the distance to the next column boundary, so cells line up without a character being moved; an image's first character becomes a box the size of the picture, and the line grows to fit it. Both revert to plain source when the caret enters the block, so everything stays editable.
 
 Three details that are easy to get wrong and are covered by tests:
 
 - **Offsets.** cmark reports positions as UTF-8 byte columns while `NSTextStorage` counts UTF-16 units. Every document containing an emoji, an accent or CJK text puts the two out of step, so all conversion goes through `SourceIndex`.
-- **Quick Look and untrusted files.** Markdown permits inline HTML, and exports pass it through. Previews do not: Quick Look renders files the user merely selected in the Finder, so embedded markup is escaped rather than executed.
+- **Quick Look and untrusted files.** Markdown permits inline HTML, and exports pass it through. Previews do not: the preview is the editor's own renderer, which draws text and never interprets markup, so a file the user merely selected in the Finder cannot run anything.
 - **Nothing disappears.** An image that is missing or still loading keeps its Markdown on screen, and a table too wide for the window keeps its pipes, rather than leaving a blank gap where content should be.
 
 ### Why the sandbox is off

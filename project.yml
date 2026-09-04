@@ -151,6 +151,12 @@ targets:
     platform: macOS
     sources:
       - path: MarkpadQuickLook
+      # The preview is the editor rendered read-only, so the extension compiles the same
+      # rendering stack. EditorView is the app's SwiftUI wrapper around it and is not needed
+      # here; EditorHost builds the view for both.
+      - path: Markpad/Editor
+        excludes:
+          - "EditorView.swift"
     dependencies:
       - package: MarkpadCore
         product: MarkpadCore
@@ -171,13 +177,14 @@ targets:
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSExtension:
           NSExtensionPointIdentifier: com.apple.quicklook.preview
-          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).PreviewProvider
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).PreviewViewController
           NSExtensionAttributes:
-            # PreviewProvider is a QLPreviewProvider, which hands Quick Look rendered data
-            # rather than a view. Without this key the system takes the view-controller path
-            # instead, tries to build a QLPreviewExtensionViewController from the principal
-            # class, and the preview dies before it renders — pressing Space shows nothing.
-            QLIsDataBasedPreview: true
+            # No QLIsDataBasedPreview here, deliberately. That key routes Quick Look to a
+            # QLPreviewProvider handing back rendered data, which Quick Look then displays in
+            # a web view of its own — the arrangement that scrolled a fixed 120px per notch.
+            # Absent, the system builds the principal class as a view controller, and the
+            # preview scrolls natively. Adding the key back without also restoring a
+            # QLPreviewProvider makes pressing Space show nothing.
             QLSupportedContentTypes:
               - net.daringfireball.markdown
             QLSupportsSearchableItems: false

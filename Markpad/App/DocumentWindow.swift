@@ -187,10 +187,6 @@ struct ExportError: Identifiable {
     let message: String
 }
 
-extension Notification.Name {
-    static let markpadScrollToLocation = Notification.Name("markpad.scrollToLocation")
-}
-
 /// The outline, drawn as the design's flat panel rather than a system sidebar.
 private struct OutlineSidebar: View {
     let items: [OutlineItem]

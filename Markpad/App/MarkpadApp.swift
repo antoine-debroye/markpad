@@ -153,26 +153,6 @@ struct MarkpadCommands: Commands {
     }
 }
 
-enum FormattingAction {
-    case bold
-    case italic
-    case code
-    case link
-
-    var wrapper: String? {
-        switch self {
-        case .bold: return "**"
-        case .italic: return "*"
-        case .code: return "`"
-        case .link: return nil
-        }
-    }
-}
-
-extension Notification.Name {
-    static let markpadFormatting = Notification.Name("markpad.formatting")
-}
-
 /// Lets the File menu reach the document in the frontmost window.
 struct FocusedDocument {
     let document: MarkdownDocument

@@ -70,34 +70,50 @@ enum DocumentActions {
         return rendered
     }
 
-    /// Chooses a PDF or image and hands it to `session`, which converts it off the main thread.
+    /// Chooses files of any convertible kind and hands them to `session`, which converts them
+    /// off the main thread and opens each as a new document.
     @MainActor
     static func importFile(into session: ImportSession, onError: @escaping (String) -> Void) {
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.pdf, .image]
-        panel.allowsMultipleSelection = false
-        panel.message = "Choose a PDF or image to convert to Markdown"
+        panel.allowedContentTypes = ConversionInput.importableContentTypes
+        panel.allowsMultipleSelection = true
+        panel.message = "Choose files to convert to Markdown"
 
         panel.begin { response in
-            guard response == .OK, let url = panel.url else { return }
-            session.begin(urls: [url], onError: onError)
+            guard response == .OK, !panel.urls.isEmpty else { return }
+            session.begin(urls: panel.urls, onError: onError)
         }
+    }
+
+    /// The pictures folder beside a converted document: `Report_assets`.
+    static func assetFolderName(for name: String) -> String {
+        (name.isEmpty ? "Converted" : name) + "_assets"
     }
 
     /// Opens converted text as a document the user can review, edit and save elsewhere.
     ///
     /// The content is staged as a real file so the standard document machinery — window
-    /// title, autosave, Save As, revert — works exactly as it does for any other file.
+    /// title, autosave, Save As, revert — works exactly as it does for any other file. Each
+    /// import gets a folder of its own, so two files with the same name do not overwrite each
+    /// other, and its pictures sit beside it where the Markdown expects them.
     @MainActor
-    static func openNewDocument(with markdown: String, suggestedName: String, convertedFrom source: URL? = nil) {
+    static func openNewDocument(with imported: ImportedMarkdown, suggestedName: String, convertedFrom source: URL? = nil) {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("Converted", isDirectory: true)
-        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
 
         let safeName = suggestedName.isEmpty ? "Converted" : suggestedName
         let url = directory.appendingPathComponent("\(safeName).md")
         do {
-            try Data(markdown.utf8).write(to: url, options: .atomic)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            if !imported.assets.isEmpty {
+                let assets = directory.appendingPathComponent(assetFolderName(for: safeName), isDirectory: true)
+                try FileManager.default.createDirectory(at: assets, withIntermediateDirectories: true)
+                for asset in imported.assets {
+                    try asset.data.write(to: assets.appendingPathComponent(asset.name))
+                }
+            }
+            try Data(imported.markdown.utf8).write(to: url, options: .atomic)
             NSDocumentController.shared.openDocument(withContentsOf: url, display: true) { _, _, error in
                 if let error {
                     NSApp.presentError(error)
@@ -145,7 +161,7 @@ struct ExportMenu: View {
                 }
             }
             Divider()
-            Button("Import PDF or Image…") {
+            Button("Import File as Markdown…") {
                 DocumentActions.importFile(
                     into: importSession,
                     onError: { error = ExportError(message: $0) }
@@ -173,5 +189,28 @@ struct ExportMenu: View {
         .background(RoundedRectangle(cornerRadius: 6).fill(palette.controlFill))
         .overlay(RoundedRectangle(cornerRadius: 6).stroke(palette.controlBorder, lineWidth: 1))
         .help("Convert this document to Word, HTML or plain text")
+    }
+}
+
+/// Opens the Convert to Markdown window. Sits beside Export in the document header, drawn as
+/// the same bordered control.
+struct ConvertButton: View {
+    @Environment(\.openWindow) private var openWindow
+    let palette: ChromePalette
+
+    var body: some View {
+        Button { openWindow(id: ConverterWindow.id) } label: {
+            ChromePill(palette: palette, height: 26) {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.down.doc")
+                        .font(.system(size: 11))
+                    Text("Convert")
+                        .font(.system(size: 12))
+                }
+                .foregroundStyle(palette.controlText)
+            }
+        }
+        .buttonStyle(.plain)
+        .help("Convert Word, PDF, web, spreadsheet, slide or audio files to Markdown (⌥⌘I)")
     }
 }

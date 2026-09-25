@@ -1,5 +1,6 @@
 import MarkpadCore
 import SwiftUI
+import UniformTypeIdentifiers
 
 @main
 struct MarkpadApp: App {
@@ -19,6 +20,8 @@ struct MarkpadApp: App {
             UpdateCommands(updater: updater)
         }
 
+        ConverterWindow()
+
         Settings {
             SettingsView(updater: updater)
         }
@@ -31,20 +34,27 @@ struct MarkpadApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillFinishLaunching(_ notification: Notification) {
         AppearanceMode.current.apply()
+        // Start on a blank document in the editor, not on the Open panel that document apps
+        // show by default. Launching by opening a file, or with windows to restore, is
+        // unaffected: an untitled document only appears when nothing else would.
+        UserDefaults.standard.register(defaults: ["NSShowAppCentricOpenPanelInsteadOfUntitledFile": false])
     }
+
+    func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool { true }
 
     /// Drives Dock-drop conversions. Held here because a drop can arrive before any document
     /// window exists, so there is no window-owned session to use.
     private let dropSession = ImportSession()
 
     func application(_ application: NSApplication, open urls: [URL]) {
-        // PDFs and images dropped on the Dock icon are converted rather than opened.
+        // Files Markpad converts are converted rather than opened. Markdown and anything else
+        // that is plain text — `.txt`, and CSV/TSV, which conform to it — keeps opening as an
+        // editable document, as it always has.
         var toConvert: [URL] = []
         for url in urls {
-            switch ConversionInput.detect(for: url) {
-            case .pdf, .image:
+            if Self.convertsOnOpen(url) {
                 toConvert.append(url)
-            default:
+            } else {
                 NSDocumentController.shared.openDocument(withContentsOf: url, display: true) { _, _, error in
                     if let error { NSApp.presentError(error) }
                 }
@@ -52,6 +62,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         guard !toConvert.isEmpty else { return }
         convert(toConvert)
+    }
+
+    static func convertsOnOpen(_ url: URL) -> Bool {
+        guard let input = ConversionInput.detect(for: url), input != .markdown else { return false }
+        if let type = UTType(filenameExtension: url.pathExtension.lowercased()), type.conforms(to: .plainText) {
+            return false
+        }
+        return true
+    }
+
+    /// Quitting mid-batch would abandon the files still queued, so ask first.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard ConverterModel.shared.isRunning else { return .terminateNow }
+        let alert = NSAlert()
+        alert.messageText = "Markpad is still converting files."
+        alert.informativeText = "Files already converted are kept. Quitting now stops the rest."
+        alert.addButton(withTitle: "Keep Converting")
+        alert.addButton(withTitle: "Quit")
+        guard alert.runModal() == .alertSecondButtonReturn else { return .terminateCancel }
+        // Quit once the running files have stopped and cleaned up, not while they are
+        // mid-write.
+        Task { @MainActor in
+            await ConverterModel.shared.cancelAndWait()
+            NSApp.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
     }
 
     /// Converts dropped files one after another, behind a single progress panel.
@@ -89,6 +125,7 @@ struct UpdateCommands: Commands {
 
 /// File menu additions: exports, import, and the editing shortcuts the editor supports.
 struct MarkpadCommands: Commands {
+    @Environment(\.openWindow) private var openWindow
     @FocusedValue(\.markdownDocument) private var focused
     @FocusedValue(\.recentsPresentation) private var recentsPresentation
 
@@ -122,7 +159,7 @@ struct MarkpadCommands: Commands {
             }
             .disabled(focused == nil)
 
-            Button("Import PDF or Image…") {
+            Button("Import File as Markdown…") {
                 guard let focused else { return }
                 DocumentActions.importFile(into: focused.importSession, onError: { message in
                     let alert = NSAlert()
@@ -133,6 +170,10 @@ struct MarkpadCommands: Commands {
             }
             .keyboardShortcut("i", modifiers: [.command, .shift])
             .disabled(focused == nil)
+
+            // Needs no document: it works on files, and opens its own window.
+            Button("Convert Files to Markdown…") { openWindow(id: ConverterWindow.id) }
+                .keyboardShortcut("i", modifiers: [.command, .option])
         }
 
         CommandMenu("Format") {

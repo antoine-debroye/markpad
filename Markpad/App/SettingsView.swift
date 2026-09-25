@@ -3,6 +3,7 @@ import SwiftUI
 struct SettingsView: View {
     @AppStorage(AppearanceMode.storageKey) private var appearance = AppearanceMode.automatic.rawValue
     @ObservedObject var updater: Updater
+    @AppStorage(ConverterModel.includesPicturesKey) private var includesPictures = true
 
     var body: some View {
         Form {
@@ -23,6 +24,16 @@ struct SettingsView: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
+            Picker("Converting images", selection: $includesPictures) {
+                Text("Picture and its text").tag(true)
+                Text("Text only").tag(false)
+            }
+
+            Text("With the picture, a photo converts to Markdown showing the image, with any text Markpad recognises in it underneath. The picture is saved in a folder beside the Markdown.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
             Toggle("Check for updates automatically", isOn: Binding(
                 get: { updater.automaticallyChecksForUpdates },
                 set: { updater.automaticallyChecksForUpdates = $0 }
@@ -34,6 +45,6 @@ struct SettingsView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .formStyle(.grouped)
-        .frame(width: 420, height: 380)
+        .frame(width: 420, height: 470)
     }
 }

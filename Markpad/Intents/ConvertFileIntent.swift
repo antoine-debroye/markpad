@@ -31,14 +31,14 @@ enum IntentFormat: String, AppEnum {
     }
 }
 
-/// Converts files between Markdown, Word, HTML, plain text — and turns PDFs and images into
+/// Converts files between Markdown, Word, HTML, plain text — and turns documents, PDFs, images and audio into
 /// Markdown. One action covers every direction so a shortcut can be built in a single step.
 struct ConvertFileIntent: AppIntent {
     static var title: LocalizedStringResource { "Convert Files with Markpad" }
 
     static var description: IntentDescription {
         IntentDescription(
-            "Converts Markdown to Word, HTML or plain text, and converts PDFs and images to Markdown.",
+            "Converts Markdown to Word, HTML or plain text, and converts documents, spreadsheets, slides, web pages, PDFs, images and audio to Markdown.",
             categoryName: "Conversion",
             searchKeywords: ["markdown", "word", "docx", "html", "pdf", "ocr", "convert"]
         )
@@ -50,7 +50,7 @@ struct ConvertFileIntent: AppIntent {
 
     // Content-type filtering on file parameters needs macOS 15; the intent validates the
     // input itself so it stays available on macOS 14.
-    @Parameter(title: "Files", description: "Markdown, PDF or image files.")
+    @Parameter(title: "Files", description: "Markdown, Word, rich text, web, PowerPoint, Excel, EPUB, CSV, JSON, XML, PDF, image or audio files.")
     var files: [IntentFile]
 
     @Parameter(title: "Convert To", default: .word)
@@ -145,20 +145,20 @@ struct ConvertMarkdownTextIntent: AppIntent {
     }
 }
 
-/// Extracts Markdown text from a PDF or image and returns it as text.
+/// Extracts Markdown text from any convertible file and returns it as text.
 struct ExtractMarkdownIntent: AppIntent {
     static var title: LocalizedStringResource { "Get Markdown from File with Markpad" }
 
     static var description: IntentDescription {
         IntentDescription(
-            "Reads a PDF or image and returns its content as Markdown text.",
+            "Reads a document, spreadsheet, slide deck, web page, PDF, image or audio file and returns its content as Markdown text.",
             categoryName: "Conversion"
         )
     }
 
     static var openAppWhenRun: Bool { false }
 
-    @Parameter(title: "File", description: "A PDF, image or Markdown file.")
+    @Parameter(title: "File", description: "Any file Markpad converts, or a Markdown file.")
     var file: IntentFile
 
     static var parameterSummary: some ParameterSummary {

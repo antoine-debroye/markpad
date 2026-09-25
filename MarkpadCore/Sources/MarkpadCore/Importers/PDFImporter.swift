@@ -46,35 +46,61 @@ public struct PDFImporter: Sendable {
         )
         reporter.report(.reading, index: 0)
 
-        var pages: [[TextBlockAssembler.Line]] = []
+        var pages: [PageContent] = []
         for index in 0..<document.pageCount {
             try reporter.checkCancellation()
-            guard let page = document.page(at: index) else { continue }
-            var lines = textLayerLines(of: page)
+            // Each page's attributed string and 2x rendering are autoreleased; without a pool
+            // per page a long scan holds every one of them until the import returns, which in
+            // a batch running several imports at once adds up to gigabytes.
+            let content: PageContent? = try autoreleasepool {
+                guard let page = document.page(at: index) else { return nil }
+                // The text layer read by position, which is what finds tables, side-by-side
+                // text and paragraph breaks. A page whose text and attributes disagree falls
+                // back to reading the text in order.
+                if let layout = PDFPageLayout(page: page), !layout.rows.isEmpty {
+                    reporter.report(.extractingText, index: index)
+                    return .layout(layout)
+                }
+                var lines = textLayerLines(of: page)
+                let hasText = lines.contains { !$0.text.trimmingCharacters(in: .whitespaces).isEmpty }
+                // Reported before the slow step, so the label describes what is about to happen.
+                reporter.report(hasText ? .extractingText : .recognizingText, index: index)
 
-            let hasText = lines.contains { !$0.text.trimmingCharacters(in: .whitespaces).isEmpty }
-            // Reported before the slow step, so the label describes what is about to happen.
-            reporter.report(hasText ? .extractingText : .recognizingText, index: index)
-
-            if !hasText, options.performOCRWhenNeeded, let image = render(page: page) {
-                // Rasterising is itself slow, so this catches a cancel that arrived during it.
-                // The check must stay outside the `try?` below, which would swallow the error
-                // and leave the page silently blank.
-                try reporter.checkCancellation()
-                lines = (try? ImageImporter().recognizeLines(in: image, options: .init())) ?? []
+                if !hasText, options.performOCRWhenNeeded, let image = render(page: page) {
+                    // Rasterising is itself slow, so this catches a cancel that arrived during it.
+                    // The check must stay outside the `try?` below, which would swallow the error
+                    // and leave the page silently blank.
+                    try reporter.checkCancellation()
+                    lines = (try? ImageImporter().recognizeLines(in: image, options: .init())) ?? []
+                }
+                return .lines(lines)
             }
-            pages.append(lines)
+            if let content { pages.append(content) }
         }
 
         try reporter.checkCancellation()
         reporter.reportAssembling()
 
-        var allLines = options.stripRepeatingHeadersAndFooters
-            ? removingRunningHeads(from: pages)
-            : pages.flatMap { $0 + [TextBlockAssembler.Line(text: "")] }
-
-        // A page break always ends a paragraph.
-        if allLines.last?.text.isEmpty == true { allLines.removeLast() }
+        let repeating = options.stripRepeatingHeadersAndFooters ? runningHeads(in: pages) : []
+        var allLines: [TextBlockAssembler.Line] = []
+        for page in pages {
+            switch page {
+            case .layout(let layout):
+                // No break at the page boundary: the next page's first line joins the
+                // paragraph before it when the text runs on, and starts a new one when not.
+                let kept = repeating.isEmpty ? layout : layout.removingSegments { repeating.contains(normalize($0)) }
+                allLines += kept.lines()
+            case .lines(let lines):
+                let edges = edgeIndices(of: lines)
+                for (index, line) in lines.enumerated() {
+                    if edges.contains(index), repeating.contains(normalize(line.text)) { continue }
+                    allLines.append(line)
+                }
+                // Recognised text has no geometry to say otherwise, so a page break ends a paragraph.
+                allLines.append(TextBlockAssembler.Line(text: ""))
+            }
+        }
+        while allLines.last?.text.isEmpty == true, allLines.last?.table == nil { allLines.removeLast() }
 
         let markdown = TextBlockAssembler.markdown(
             from: allLines,
@@ -123,46 +149,62 @@ public struct PDFImporter: Sendable {
         return lines
     }
 
-    /// Removes lines that appear on most pages — page numbers and running heads — which
-    /// would otherwise interrupt the prose at every page boundary.
-    private func removingRunningHeads(from pages: [[TextBlockAssembler.Line]]) -> [TextBlockAssembler.Line] {
-        guard pages.count >= 3 else {
-            return pages.flatMap { $0 + [TextBlockAssembler.Line(text: "")] }
-        }
+    private enum PageContent {
+        /// A text layer read by position.
+        case layout(PDFPageLayout)
+        /// Lines without positions: recognised from a scan, or a text layer that could not be
+        /// laid out.
+        case lines([TextBlockAssembler.Line])
+    }
 
-        // Only the topmost and bottommost non-empty line of each page can be a running head,
-        // and only if it is short. Body text that happens to repeat must survive.
-        func edgeIndices(of page: [TextBlockAssembler.Line]) -> Set<Int> {
-            let filled = page.indices.filter { !page[$0].text.trimmingCharacters(in: .whitespaces).isEmpty }
-            guard let first = filled.first, let last = filled.last, first != last else { return [] }
-            return [first, last]
-        }
-
+    /// Text that repeats in the margins of many pages — running heads, footers, page numbers —
+    /// which would otherwise interrupt the prose at every page break.
+    ///
+    /// Candidates are the pieces of text in each page's top and bottom margin, plus its first
+    /// and last line. A footer and a page number side by side count separately. A document of
+    /// six pages or more needs a candidate on three of them: a pack of several documents
+    /// repeats each one's header only on its own pages. Shorter documents need most pages.
+    private func runningHeads(in pages: [PageContent]) -> Set<String> {
+        guard pages.count >= 3 else { return [] }
         let maximumRunningHeadLength = 80
-        var counts: [String: Int] = [:]
+        // Text in the margin band proper, and text that is merely a page's first or last line,
+        // are counted apart: the band is where running heads live, so two repeats are enough
+        // there — a three-page form within a pack repeats its header only twice.
+        var bandCounts: [String: Int] = [:]
+        var edgeCounts: [String: Int] = [:]
         for page in pages {
-            let candidates = Set(edgeIndices(of: page).compactMap { index -> String? in
-                let text = page[index].text.trimmingCharacters(in: .whitespaces)
-                guard text.count <= maximumRunningHeadLength else { return nil }
-                return normalize(text)
-            })
-            for candidate in candidates where !candidate.isEmpty {
-                counts[candidate, default: 0] += 1
+            var band: Set<String> = []
+            var edges: Set<String> = []
+            switch page {
+            case .layout(let layout):
+                let bandRows = layout.bandRowIndices
+                for index in layout.marginRowIndices {
+                    for segment in layout.rows[index].segments {
+                        if bandRows.contains(index) { band.insert(normalize(segment.text)) } else { edges.insert(normalize(segment.text)) }
+                    }
+                }
+            case .lines(let lines):
+                for index in edgeIndices(of: lines) { edges.insert(normalize(lines[index].text)) }
+            }
+            for candidate in band where !candidate.isEmpty && candidate.count <= maximumRunningHeadLength {
+                bandCounts[candidate, default: 0] += 1
+            }
+            for candidate in edges.subtracting(band) where !candidate.isEmpty && candidate.count <= maximumRunningHeadLength {
+                edgeCounts[candidate, default: 0] += 1
             }
         }
-        let threshold = max(2, Int((Double(pages.count) * 0.6).rounded()))
-        let repeating = Set(counts.filter { $0.value >= threshold }.keys)
+        let edgeThreshold = pages.count >= 6 ? 3 : max(2, Int((Double(pages.count) * 0.6).rounded()))
+        var repeating = Set(edgeCounts.filter { $0.value + (bandCounts[$0.key] ?? 0) >= edgeThreshold }.keys)
+        repeating.formUnion(bandCounts.filter { $0.value >= 2 }.keys)
+        return repeating
+    }
 
-        var result: [TextBlockAssembler.Line] = []
-        for page in pages {
-            let edges = edgeIndices(of: page)
-            for (index, line) in page.enumerated() {
-                if edges.contains(index), repeating.contains(normalize(line.text)) { continue }
-                result.append(line)
-            }
-            result.append(TextBlockAssembler.Line(text: ""))
-        }
-        return result
+    /// The first and last non-empty line: the only places a running head can be in text
+    /// without positions.
+    private func edgeIndices(of page: [TextBlockAssembler.Line]) -> Set<Int> {
+        let filled = page.indices.filter { !page[$0].text.trimmingCharacters(in: .whitespaces).isEmpty }
+        guard let first = filled.first, let last = filled.last, first != last else { return [] }
+        return [first, last]
     }
 
     /// Collapses digits and whitespace so "Page 3" and "Page 4" compare equal.

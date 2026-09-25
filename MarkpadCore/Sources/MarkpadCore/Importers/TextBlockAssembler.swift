@@ -11,6 +11,11 @@ public enum TextBlockAssembler {
         /// Font size in points, when the source knows it.
         public var fontSize: Double?
         public var isBold: Bool
+        /// The source's layout says a new block starts here — extra space above, a change of
+        /// size, or a previous line that stopped short — so it never joins the paragraph before.
+        public var startsBlock = false
+        /// A table found by layout, header row first. When set, `text` is ignored.
+        public var table: [[String]]?
 
         public init(text: String, fontSize: Double? = nil, isBold: Bool = false) {
             self.text = text
@@ -45,6 +50,10 @@ public enum TextBlockAssembler {
 
         var blocks: [String] = []
         var paragraph: [String] = []
+        /// Level of the heading just written, while nothing has followed it yet.
+        var openHeading: Int?
+        /// The table just written, while nothing but page breaks has followed it.
+        var openTable: [[String]]?
 
         func flushParagraph() {
             guard !paragraph.isEmpty else { return }
@@ -53,13 +62,40 @@ public enum TextBlockAssembler {
         }
 
         for line in lines {
-            switch classify(line, headingSizes: headingSizes) {
+            if let table = line.table {
+                flushParagraph()
+                openHeading = nil
+                // A table continued on the next page arrives as a second table with the same
+                // columns straight after the first: one table, not two.
+                if let previous = openTable, previous.first?.count == table.first?.count,
+                   let last = blocks.indices.last {
+                    openTable = previous + table
+                    blocks[last] = MarkdownText.table(openTable!.map { $0.map(escapeInline) }) ?? blocks[last]
+                } else if let markdown = MarkdownText.table(table.map { $0.map(escapeInline) }) {
+                    blocks.append(markdown)
+                    openTable = table
+                }
+                continue
+            }
+            if !line.text.trimmingCharacters(in: .whitespaces).isEmpty { openTable = nil }
+            if line.startsBlock { flushParagraph() }
+            let classification = classify(line, headingSizes: headingSizes)
+            if case .heading = classification {} else { openHeading = nil }
+
+            switch classification {
             case .blank:
                 flushParagraph()
 
             case .heading(let level):
                 flushParagraph()
-                blocks.append(String(repeating: "#", count: level) + " " + escapeInline(line.text))
+                // A heading too long for one line continues on the next at the same size:
+                // one heading, not two.
+                if openHeading == level, !line.startsBlock, let last = blocks.indices.last {
+                    blocks[last] += " " + escapeInline(line.text)
+                } else {
+                    blocks.append(String(repeating: "#", count: level) + " " + escapeInline(line.text))
+                }
+                openHeading = level
 
             case .bullet(let text):
                 flushParagraph()

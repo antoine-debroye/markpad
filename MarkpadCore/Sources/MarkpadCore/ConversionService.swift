@@ -1,4 +1,6 @@
 import Foundation
+import UniformTypeIdentifiers
+import ImageIO
 
 /// One entry point for every conversion Markpad performs.
 ///
@@ -28,8 +30,9 @@ public struct ConversionService: Sendable {
 
     /// Converts a file on disk into `format`.
     ///
-    /// `progress` and `isCancelled` apply only to the import half — reading a PDF or image. They
-    /// both default to inert, so every existing caller behaves exactly as before.
+    /// `progress` and `isCancelled` apply only to the import half — reading the source file.
+    /// They both default to inert, so every existing caller behaves exactly as before. Audio is
+    /// transcribed asynchronously and is refused here; use `importFile(at:to:options:)`.
     public func convert(
         fileAt url: URL,
         to format: ConversionFormat,
@@ -39,37 +42,162 @@ public struct ConversionService: Sendable {
         guard let input = ConversionInput.detect(for: url) else {
             throw ConversionError.unsupportedInput(url)
         }
+        let baseName = url.deletingPathExtension().lastPathComponent
 
-        let markdown: String
-        switch input {
-        case .markdown:
-            guard let text = try? String(contentsOf: url, encoding: .utf8) else {
-                throw ConversionError.unreadableFile(url)
-            }
-            markdown = text
-        case .pdf:
-            markdown = try PDFImporter().convert(
-                url: url,
-                options: options.pdf,
-                progress: options.progress,
-                isCancelled: isCancelled
-            )
-        case .image:
-            markdown = try ImageImporter().convert(
-                url: url,
-                options: options.image,
-                progress: options.progress,
-                isCancelled: isCancelled
+        if input == .markdown {
+            return try convert(
+                markdown: try Self.readMarkdown(at: url),
+                to: format,
+                baseName: baseName,
+                resourceDirectory: url.deletingLastPathComponent()
             )
         }
+        if input == .audio { throw ConversionError.requiresAsynchronousImport(url) }
 
-        let baseName = url.deletingPathExtension().lastPathComponent
-        return try convert(
-            markdown: markdown,
-            to: format,
-            baseName: baseName,
-            resourceDirectory: input == .markdown ? url.deletingLastPathComponent() : nil
+        let options = Self.keepingPictures(options, for: format)
+        let imported = try Self.importDocument(at: url, as: input, options: options, isCancelled: isCancelled)
+        return try convert(imported: imported, to: format, baseName: baseName)
+    }
+
+    /// Converts an imported document, pictures included, into `format`.
+    ///
+    /// Word and HTML exports embed pictures, so they are staged in a scratch folder the
+    /// exporters can read and removed afterwards. Markdown output carries the Markdown only:
+    /// the caller decides where, if anywhere, the pictures are saved.
+    public func convert(imported: ImportedMarkdown, to format: ConversionFormat, baseName: String) throws -> Result {
+        guard format != .markdown, !imported.assets.isEmpty else {
+            return try convert(markdown: imported.markdown, to: format, baseName: baseName)
+        }
+        let scratch = FileManager.default.temporaryDirectory
+            .appendingPathComponent("MarkpadExport-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        let folder = scratch.appendingPathComponent(Self.exportAssetFolder, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        for asset in imported.assets {
+            try asset.data.write(to: folder.appendingPathComponent(asset.name))
+        }
+        return try convert(markdown: imported.markdown, to: format, baseName: baseName, resourceDirectory: scratch)
+    }
+
+    /// Imports any supported file as Markdown plus the pictures it contains. Not for audio,
+    /// which needs `importDocument(at:options:)`.
+    static func importDocument(
+        at url: URL,
+        as input: ConversionInput,
+        options: ImportOptions,
+        isCancelled: @escaping @Sendable () -> Bool
+    ) throws -> ImportedMarkdown {
+        // Every importer runs on a thread with a large stack: see `ImportLimits.importStackSize`.
+        try ImportLimits.onLargeStack {
+            try importDocumentOnCurrentThread(at: url, as: input, options: options, isCancelled: isCancelled)
+        }
+    }
+
+    private static func importDocumentOnCurrentThread(
+        at url: URL,
+        as input: ConversionInput,
+        options: ImportOptions,
+        isCancelled: @escaping @Sendable () -> Bool
+    ) throws -> ImportedMarkdown {
+        let document = options.document
+        let progress = options.progress
+        switch input {
+        case .markdown:
+            return ImportedMarkdown(markdown: try readMarkdown(at: url))
+        case .pdf:
+            return ImportedMarkdown(markdown: try PDFImporter().convert(
+                url: url, options: options.pdf, progress: progress, isCancelled: isCancelled))
+        case .image:
+            return try importImage(at: url, options: options, isCancelled: isCancelled)
+        case .wordDocument:
+            return try DocxImporter().convert(url: url, options: document, progress: progress, isCancelled: isCancelled)
+        case .richText:
+            return try RichTextImporter().convert(url: url, options: document, progress: progress, isCancelled: isCancelled)
+        case .webPage:
+            return try HTMLImporter().convert(url: url, options: document, progress: progress, isCancelled: isCancelled)
+        case .presentation:
+            return try PresentationImporter().convert(url: url, options: document, progress: progress, isCancelled: isCancelled)
+        case .spreadsheet:
+            return try SpreadsheetImporter().convert(url: url, options: document, progress: progress, isCancelled: isCancelled)
+        case .ebook:
+            return try EpubImporter().convert(url: url, options: document, progress: progress, isCancelled: isCancelled)
+        case .delimitedText:
+            return try DelimitedTextImporter().convert(url: url, options: document, progress: progress, isCancelled: isCancelled)
+        case .json, .xml:
+            return try StructuredTextImporter().convert(url: url, options: document, progress: progress, isCancelled: isCancelled)
+        case .audio:
+            throw ConversionError.requiresAsynchronousImport(url)
+        }
+    }
+
+    /// An image's recognised text, with the picture itself above it when asked for.
+    private static func importImage(
+        at url: URL,
+        options: ImportOptions,
+        isCancelled: @escaping @Sendable () -> Bool
+    ) throws -> ImportedMarkdown {
+        let keepsPicture = options.document.includesOriginalPicture && options.document.assetFolderName != nil
+        let text: String
+        do {
+            text = try ImageImporter().convert(url: url, options: options.image, progress: options.progress, isCancelled: isCancelled)
+        } catch ConversionError.noTextFound(_) where keepsPicture {
+            // A photo with no writing in it is still worth converting when the picture is kept.
+            text = ""
+        }
+        guard keepsPicture else { return ImportedMarkdown(markdown: text) }
+
+        let collector = AssetCollector(folderName: options.document.assetFolderName)
+        guard let (data, name) = portablePicture(at: url),
+              let destination = collector.add(data, suggestedName: name) else {
+            if text.isEmpty { throw ConversionError.noTextFound(url) }
+            return ImportedMarkdown(markdown: text, notices: ["The picture was too large to include; only its text was kept."])
+        }
+        let alt = url.deletingPathExtension().lastPathComponent
+        let picture = MarkdownRenderer.render([.paragraph([.image(alt: alt, destination: destination)])])
+        return ImportedMarkdown(
+            markdown: text.isEmpty ? picture : picture + "\n" + text,
+            assets: collector.assets
         )
+    }
+
+    /// The picture's bytes in a format every viewer and exporter reads, with its file name.
+    ///
+    /// An iPhone photo is HEIC, which the editor shows but Word export, most browsers and
+    /// GitHub do not, so HEIC, HEIF and WebP are re-encoded as JPEG — copying the source's
+    /// properties, so a portrait photo stays upright. Everything else is kept byte for byte.
+    static func portablePicture(at url: URL) -> (Data, String)? {
+        guard let original = try? Data(contentsOf: url) else { return nil }
+        let ext = url.pathExtension.lowercased()
+        guard ["heic", "heif", "webp"].contains(ext) else { return (original, url.lastPathComponent) }
+
+        let output = NSMutableData()
+        guard let source = CGImageSourceCreateWithData(original as CFData, nil),
+              let destination = CGImageDestinationCreateWithData(output, UTType.jpeg.identifier as CFString, 1, nil) else {
+            return (original, url.lastPathComponent)
+        }
+        CGImageDestinationAddImageFromSource(destination, source, 0, [
+            kCGImageDestinationLossyCompressionQuality: 0.85,
+        ] as CFDictionary)
+        guard CGImageDestinationFinalize(destination) else { return (original, url.lastPathComponent) }
+        return (output as Data, url.deletingPathExtension().lastPathComponent + ".jpg")
+    }
+
+    /// The folder name pictures are staged under for Word and HTML exports.
+    static let exportAssetFolder = "images"
+
+    /// Word and HTML exports can embed pictures, so they are always collected for those.
+    private static func keepingPictures(_ options: ImportOptions, for format: ConversionFormat) -> ImportOptions {
+        guard format != .markdown, options.document.assetFolderName == nil else { return options }
+        var options = options
+        options.document.assetFolderName = exportAssetFolder
+        return options
+    }
+
+    static func readMarkdown(at url: URL) throws -> String {
+        guard let text = try? String(contentsOf: url, encoding: .utf8) else {
+            throw ConversionError.unreadableFile(url)
+        }
+        return text
     }
 
     /// Converts in-memory Markdown into `format`.
@@ -115,7 +243,8 @@ public struct ConversionService: Sendable {
         }
     }
 
-    /// Reads any supported file as Markdown, converting PDFs and images on the way in.
+    /// Reads any supported file as Markdown, converting documents on the way in. Pictures are
+    /// replaced by their alt text, since a returned string has nowhere to keep them.
     public func markdown(fromFileAt url: URL) throws -> String {
         try convert(fileAt: url, to: .markdown).text ?? ""
     }
@@ -133,6 +262,11 @@ public struct ConversionService: Sendable {
         to format: ConversionFormat,
         options: ImportOptions = ImportOptions()
     ) async throws -> Result {
+        if ConversionInput.detect(for: url) == .audio {
+            let options = Self.keepingPictures(options, for: format)
+            let imported = try await importDocument(at: url, options: options)
+            return try convert(imported: imported, to: format, baseName: url.deletingPathExtension().lastPathComponent)
+        }
         // `Task.detached`, not `Task { }`: `Task.init` inherits actor isolation, so started from
         // the main actor — which is where every caller lives — the work would run on the main
         // thread and the freeze this exists to fix would survive.
@@ -153,7 +287,35 @@ public struct ConversionService: Sendable {
         fromFileAt url: URL,
         options: ImportOptions = ImportOptions()
     ) async throws -> String {
-        try await importFile(at: url, to: .markdown, options: options).text ?? ""
+        try await importDocument(at: url, options: options).markdown
+    }
+
+    /// Reads any supported file — audio included — as Markdown plus the pictures it contains,
+    /// off the caller's thread. Pictures are kept only when `options.document.assetFolderName`
+    /// names a folder to link them into.
+    public func importDocument(
+        at url: URL,
+        options: ImportOptions = ImportOptions()
+    ) async throws -> ImportedMarkdown {
+        guard let input = ConversionInput.detect(for: url) else {
+            throw ConversionError.unsupportedInput(url)
+        }
+        if input == .audio {
+            return try await AudioImporter().convert(
+                url: url,
+                options: options.audio,
+                progress: options.progress,
+                isCancelled: { Task.isCancelled }
+            )
+        }
+        let work = Task.detached(priority: .userInitiated) {
+            try Self.importDocument(at: url, as: input, options: options, isCancelled: { Task.isCancelled })
+        }
+        return try await withTaskCancellationHandler {
+            try await work.value
+        } onCancel: {
+            work.cancel()
+        }
     }
 }
 

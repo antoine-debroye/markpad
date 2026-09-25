@@ -22,11 +22,38 @@ Open the disk image and drag Markpad to Applications. Signed and notarized, and 
 
 **Shows your content, not your markup.** Tables are drawn as grids, images and Mermaid diagrams appear in place, code blocks are coloured by language, and task boxes are clickable.
 
-**Converts almost anything.** Markdown to Word (`.docx`), HTML or plain text. PDFs and images *back* to Markdown, using on-device text recognition — nothing is uploaded, and long documents show progress you can cancel.
+**Converts almost anything.** Markdown to Word (`.docx`), HTML or plain text — and almost anything *back* to Markdown: Word, rich text, web pages, PowerPoint, Excel, EPUB, CSV, JSON, XML, PDFs, images and audio. One file at a time, or a whole folder at once. Text recognition and speech transcription run on device — nothing is uploaded, and long jobs show progress you can cancel.
 
-**Works from anywhere in macOS.** Press Space on a `.md` file in the Finder for a formatted preview. Drop a PDF on the Dock icon to convert it. Shortcuts actions cover every conversion, so a Quick Action or a hotkey does the whole job.
+**Works from anywhere in macOS.** Press Space on a `.md` file in the Finder for a formatted preview. Drop a PDF, Word file or web page on the Dock icon to convert it. Shortcuts actions cover every conversion, so a Quick Action or a hotkey does the whole job.
 
 **Light, Dark or Automatic**, applied to the editor, previews and exported HTML alike.
+
+## Converting files to Markdown
+
+**One file:** File ▸ Import File as Markdown… (⇧⌘I), or drop it on the Dock icon. The result opens as a new document to review and save.
+
+**Many files:** File ▸ Convert Files to Markdown… (⌥⌘I). Drop files or whole folders — sub-folders are searched — then choose where the Markdown goes:
+
+- **Next to the originals**, as `Report.md` beside `Report.docx`.
+- **In one folder**.
+- **In one folder, keeping sub-folders**, which recreates the dropped folders' structure.
+
+An existing file is never overwritten: Markpad either skips that source (the default, so running a batch again over the same folder converts only what is new) or writes `Report 2.md`. Two sources with the same name in one batch become `Report (docx).md` and `Report (pdf).md`. Pictures go in a `Report_assets` folder beside the Markdown. One failed file never stops the rest; when the batch ends you can retry the failures, copy their errors, or show the results in Finder.
+
+| Input | What you get |
+| --- | --- |
+| Word (`.docx`) | Headings, bold/italic, nested lists, tables, links and pictures, read straight from the file |
+| Rich text (`.rtf`, `.rtfd`, `.doc`, `.odt`) | Headings (from type size), emphasis, lists, tables, links and pictures |
+| Web pages (`.html`, `.xhtml`, `.webarchive`) | The page's structure; scripts and styling are dropped |
+| PowerPoint (`.pptx`) | One section per slide: title, bullets, tables, pictures and speaker notes |
+| Excel (`.xlsx`) | One table per sheet, with dates written as dates |
+| EPUB | Chapters in reading order, with pictures |
+| CSV, TSV | A table |
+| JSON, XML | The file as a code block |
+| PDF, images | Text recognised on device |
+| Audio (`.m4a`, `.mp3`, `.wav`, `.aiff`, `.caf`, `.aac`, `.flac`) | A transcript, timestamped by paragraph, transcribed on device |
+
+The converter's approach was inspired by [MDFlux](https://github.com/ibrahimqureshae/mdflux) (MIT), which does this on Windows and Linux with Python; Markpad's version is written from scratch in Swift and needs nothing installed.
 
 ## Requirements
 
@@ -42,11 +69,11 @@ Three actions appear once the app has been launched at least once:
 
 | Action | Input | Output |
 | --- | --- | --- |
-| Convert Files with Markpad | Markdown, PDF or image files | Files in the chosen format |
-| Get Markdown from File with Markpad | PDF, image or Markdown | Markdown text |
+| Convert Files with Markpad | Markdown, or any file Markpad converts | Files in the chosen format |
+| Get Markdown from File with Markpad | Any file Markpad converts, or Markdown | Markdown text |
 | Convert Markdown Text with Markpad | Markdown text | A file in the chosen format |
 
-They run without bringing the app to the front, and return files rather than writing next to the input, so Shortcuts' own "Save File" step decides where output lands.
+They run without bringing the app to the front, and return files rather than writing next to the input, so Shortcuts' own "Save File" step decides where output lands. A Markdown result from a Shortcut is a single file, so pictures inside a converted document are replaced by their descriptions; Word and HTML results keep them.
 
 If the actions do not appear, copy the app to `/Applications`, launch it once, then restart Shortcuts.
 
@@ -63,6 +90,13 @@ If a `.md` file still previews as plain text after installing, enable Markpad un
 - Remote images (`https://…`) are not downloaded; an editor should not make network requests while you type. Local images render.
 - Images stored beside a document do not appear in the Finder preview. A preview extension is sandboxed to the one file the reader selected and cannot open the picture next to it, so its Markdown stays on screen instead; opening the document shows the picture.
 - No LaTeX rendering.
+- Conversion to Markdown keeps structure, not layout: colours, fonts, columns and page layout are left behind. Merged table cells keep their text in the first cell.
+- Legacy `.xls` and `.ppt`, Pages, Numbers and Keynote files, and video are not converted. Password-protected files are refused rather than guessed at.
+- `.doc` files lose their links (Cocoa's reader drops them). Charts and SmartArt in PowerPoint are left out, with a note.
+- Very large sheets and CSV files are cut to their first 5,000 rows and 256 columns, with a note, since a bigger table is unreadable as Markdown.
+- A web page's local pictures are copied only from its own folder and below. A picture reached through `..`, an absolute path or a `file:` address keeps its original reference and is not read — a downloaded page cannot pull other files from your Mac into the output.
+- Audio needs the language's on-device speech model. On macOS 26 and later Markpad asks macOS to fetch it the first time, which is the one conversion that may use the network (the audio itself never leaves the Mac). On earlier macOS, Markpad asks for Speech Recognition permission the first time and only transcribes languages the Mac supports on device.
+- A converted document opened from Import lives in a temporary folder with its pictures beside it. Save As moves the Markdown but not the `_assets` folder; use the batch converter to write straight to a folder of your choice.
 
 ## Licence
 
@@ -109,9 +143,11 @@ Generated `.docx` files are checked against readers that did not produce them �
 ```
 MarkpadCore/      Conversion engine and editor logic. No AppKit, so it tests on its own.
   Exporters/      HTML, plain text, and a direct OOXML .docx writer
-  Importers/      PDF (PDFKit) and image (Vision) to Markdown
+  Importers/      Every format to Markdown: PDF (PDFKit), images (Vision), audio (Speech),
+                  Office and EPUB (a built-in ZIP reader and XMLParser), web, rich text, data
+  Batch/          Planning and running a folder-sized conversion without overwriting anything
   Editor/         StyleEngine: Markdown source → styled runs and syntax markers
-Markpad/          The app: document shell, editor, Shortcuts actions, menus
+Markpad/          The app: document shell, editor, converter window, Shortcuts actions, menus
 MarkpadQuickLook/ Quick Look preview extension
 ```
 

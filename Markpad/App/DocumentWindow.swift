@@ -159,6 +159,12 @@ struct DocumentWindow: View {
             }
         }
 
+        // Converting other files in, beside exporting this one out: the two directions of the
+        // same job, side by side.
+        ToolbarItem(placement: .primaryAction) {
+            ConvertButton(palette: palette)
+        }
+
         ToolbarItem(placement: .primaryAction) {
             ExportMenu(
                 document: document,

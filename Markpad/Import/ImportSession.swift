@@ -4,7 +4,7 @@ import SwiftUI
 
 /// Drives one import — or a queue of them, when several files are dropped at once.
 ///
-/// The conversion runs off the main thread through `ConversionService.importFile`; this type
+/// The conversion runs off the main thread through `ConversionService.importDocument`; this type
 /// owns the task, mirrors its progress for the sheet, and turns the result into a document.
 @MainActor
 final class ImportSession: ObservableObject {
@@ -102,17 +102,22 @@ final class ImportSession: ObservableObject {
                 }
 
                 do {
-                    let markdown = try await ConversionService().importMarkdown(
-                        fromFileAt: url,
-                        options: .init(progress: { [weak self] update in
-                            // Fired on the worker thread.
-                            Task { @MainActor in self?.progress = update }
-                        })
-                    )
+                    let name = url.deletingPathExtension().lastPathComponent
+                    if ConversionInput.detect(for: url) == .audio {
+                        _ = await SpeechPermission.request()
+                    }
+                    var options = ImportOptions(progress: { [weak self] update in
+                        // Fired on the worker thread.
+                        Task { @MainActor in self?.progress = update }
+                    })
+                    // Pictures are saved beside the new document, so they display in it.
+                    options.document.assetFolderName = DocumentActions.assetFolderName(for: name)
+                    options.document.includesOriginalPicture = ConverterModel.includesPictures
+                    let imported = try await ConversionService().importDocument(at: url, options: options)
                     guard !Task.isCancelled else { return }
                     DocumentActions.openNewDocument(
-                        with: markdown,
-                        suggestedName: url.deletingPathExtension().lastPathComponent,
+                        with: imported,
+                        suggestedName: name,
                         convertedFrom: url
                     )
                 } catch is CancellationError {

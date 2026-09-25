@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Progress for a PDF or image being converted to Markdown.
+/// Progress for a file being converted to Markdown.
 ///
 /// Used both as a sheet over a document window and, for Dock drops that arrive with no window
 /// open, as the content of a standalone panel.
@@ -9,7 +9,7 @@ struct ImportProgressSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Import PDF or Image")
+            Text("Import as Markdown")
                 .font(.headline)
 
             if let source = session.source {
